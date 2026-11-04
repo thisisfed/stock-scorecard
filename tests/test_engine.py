@@ -136,4 +136,78 @@ except E.ScoreError as e:
     assert "blank-check" in str(e)
 print("no price, bank model, SPAC refusal OK")
 assert E.norm_ticker(" brk.b ") == "BRK-B" and E.norm_ticker("aapl") == "AAPL"
+assert E.sector_of("2840")[0] == "consumer" and E.sector_of("3021")[0] == "consumer" and E.sector_of("3559")[0] == "semis_hw"
+import copy
+
+
+def variant(**changes):
+    c = copy.deepcopy(cf)
+    for tag, val in changes.items():
+        ns = "dei" if tag.startswith("Entity") else "us-gaap"
+        if val is None:
+            c["facts"][ns].pop(tag, None)
+        else:
+            c["facts"][ns][tag] = val
+    return c
+
+
+# McDonald's case: weighted shares filed as 98 instead of 98 million; EPS shows the cover page count is right
+eps = {"units": {"USD/shares": [fact("2026-04-01", end, quarters[-1][1] * 0.15 / 98e6)]}}
+mis = {"units": {"shares": [fact("2025-04-01", "2025-06-30", 100.0), fact("2026-04-01", end, 98.0)]}}
+r4 = E.build("MIS", 1, "Mis Co", "NYSE", sub, variant(WeightedAverageNumberOfSharesOutstandingBasic=mis,
+             WeightedAverageNumberOfDilutedSharesOutstanding=None, EarningsPerShareBasic=eps), px, [])
+assert abs(r4["facts"]["shares"] - 98e6) < 1, r4["facts"]["shares"]
+m4 = {i["key"]: i for p in r4["score"]["pillars"] for i in p["metrics"]}
+assert abs(m4["share_yoy"]["value"] + 0.02) < 1e-9   # the ratio still works when both are mis-scaled
+print("mis-scaled shares OK:", r4["facts"]["shares_source"])
+# Berkshire: per-share figures in Class A terms, ticker is Class B
+r5 = E.build("BRK-B", 1, "Berkshire", "NYSE", {"sic": "6331"}, variant(EntityCommonStockSharesOutstanding=None), px, [])
+assert abs(r5["facts"]["shares"] - 98e6 * 1500) < 1 and "1,500" in r5["facts"]["shares_source"]
+# foreign 20-F filer: valuation left out
+r6 = E.build("ADR", 1, "Adr Co", "NYSE", dict(sub, filings={"recent": {"form": ["20-F", "6-K"]}}), cf, px, [])
+assert r6["facts"]["market_cap"] is None and any("20-F" in w for w in r6["warnings"])
+assert {p["name"]: p["score"] for p in r6["score"]["pillars"]}["Valuation"] is None
+# debt filed in a non-standard way: left out, price / earnings used instead
+act = {"units": {"USD": [fact("2026-01-01", end, 500.0)]}}
+r7 = E.build("FORDISH", 1, "Fordish", "NYSE", sub, variant(LongTermDebt=None, ShortTermBorrowings=None, LongTermDebtNoncurrent=None,
+             InterestExpense=None, ProceedsFromIssuanceOfLongTermDebt=act), px, [])
+m7 = {i["key"]: i for p in r7["score"]["pillars"] for i in p["metrics"]}
+assert r7["facts"]["debt"] is None and r7["facts"]["ev"] is None and "pe_alt" in m7 and m7["ev_sales"]["value"] is None
+assert any("total debt" in w for w in r7["warnings"])
+# no debt at all and no borrowing: genuinely debt-free
+r8 = E.build("CLEAN", 1, "Clean", "NYSE", sub, variant(LongTermDebt=None, ShortTermBorrowings=None, LongTermDebtNoncurrent=None,
+             InterestExpense=None), px, [])
+assert r8["facts"]["debt"] == 0.0 and "pe_alt" not in {i["key"] for p in r8["score"]["pillars"] for i in p["metrics"]}
+print("Berkshire classes, 20-F, non-standard debt OK")
+# gross profit stopped being reported (Netflix): revenue minus cost of revenue fills the gap
+gp_old = {"units": {"USD": [x for x in gp if x["end"] < "2025-01-01"]}}
+cost = {"units": {"USD": [dict(x, val=x["val"] / 0.7 * 0.3) for x in gp]}}
+r9 = E.build("NFLXISH", 1, "Nf", "Nasdaq", sub, variant(GrossProfit=gp_old, CostOfRevenue=cost), px, [])
+m9 = {i["key"]: i for p in r9["score"]["pillars"] for i in p["metrics"]}
+assert abs(m9["gross_margin"]["value"] - 0.7) < 1e-9, m9["gross_margin"]
+# no operating profit line (Exxon, Nike): profit before tax plus interest
+pre = {"units": {"USD": [dict(x, val=x["val"] - (1.0 if 80 <= E.days(x["start"], x["end"]) <= 100 else 4.0)) for x in op]}}
+r10 = E.build("XOMISH", 1, "Xo", "NYSE", sub, variant(OperatingIncomeLoss=None,
+              IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest=pre), px, [])
+m10 = {i["key"]: i for p in r10["score"]["pillars"] for i in p["metrics"]}
+assert abs(m10["op_margin"]["value"] - 0.2) < 1e-9, m10["op_margin"]
+print("gross profit and operating profit fallbacks OK")
+# a new registrant (Exxon's new holding company): only this year and last year's nine months
+def keep_9m(lst):
+    return [x for x in lst if x.get("start") in ("2026-01-01", "2025-01-01") and x["end"] in ("2026-06-30", "2025-06-30")
+            or (x.get("start") is None)]
+short = copy.deepcopy(cf)
+for tag, node in short["facts"]["us-gaap"].items():
+    for u in node["units"]:
+        node["units"][u] = keep_9m(node["units"][u])
+# year-to-date (6 months) revenue facts for both years
+h1 = lambda y: sum(v for e, v in quarters if e in (f"{y}-03-31", f"{y}-06-30"))
+short["facts"]["us-gaap"]["Revenues"] = {"units": {"USD": [fact("2025-01-01", "2025-06-30", h1(2025)), fact("2026-01-01", end, h1(2026))]}}
+short["facts"]["us-gaap"]["OperatingIncomeLoss"] = {"units": {"USD": [fact("2025-01-01", "2025-06-30", h1(2025) * 0.2), fact("2026-01-01", end, h1(2026) * 0.2)]}}
+r11 = E.build("NEW", 1, "New Holdco", "NYSE", sub, short, px, [])
+m11 = {i["key"]: i for p in r11["score"]["pillars"] for i in p["metrics"]}
+assert abs(r11["facts"]["revenue_ttm"] - h1(2026) * 365 / E.days("2026-01-01", end)) < 1e-6
+assert abs(m11["rev_ttm_yoy"]["value"] - (h1(2026) / h1(2025) - 1)) < 1e-9 and abs(m11["op_margin"]["value"] - 0.2) < 1e-9
+assert any("year to date" in w for w in r11["warnings"])
+print("short filing history (year to date) OK")
 print("ALL OK")

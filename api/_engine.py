@@ -16,6 +16,7 @@ Not investment advice: the thresholds below are judgement calls, not back-tested
 import datetime as dt
 import gzip
 import json
+import math
 import os
 import re
 import sys
@@ -243,6 +244,15 @@ FLOW_TAGS = {
     "interest": ["InterestExpense", "InterestExpenseNonoperating", "InterestExpenseDebt",
                  "InterestPaidNet", "FinanceCosts"],
 }
+PRETAX_TAGS = ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+               "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+               "IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic", "ProfitLossBeforeTax"]
+DEBT_ACTIVITY_TAGS = ["ProceedsFromIssuanceOfLongTermDebt", "RepaymentsOfLongTermDebt", "ProceedsFromIssuanceOfDebt",
+                      "RepaymentsOfDebt", "ProceedsFromIssuanceOfSeniorLongTermDebt", "ProceedsFromRepaymentsOfShortTermDebt"]
+# Companies whose per-share figures are in one class's terms while the ticker is another class
+CLASS_FACTOR = {"BRK-B": 1500.0, "BRK-A": 1.0}
+CLASS_NOTE = {"BRK-B": "Class A equivalent shares x 1,500 (each Class A share converts into 1,500 Class B)",
+              "BRK-A": "Class A equivalent shares"}
 INSTANT_TAGS = {
     "cash": ["CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents",
              "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "Cash"],
@@ -261,6 +271,7 @@ DEBT_WAYS = [
     (["LongTermDebt"], ["ShortTermBorrowings", "CommercialPaper"]),
     (["LongTermDebtNoncurrent", "DebtCurrent"], []),
     (["LongTermDebtNoncurrent"], ["LongTermDebtCurrent", "ShortTermBorrowings", "CommercialPaper"]),
+    (["LongTermDebtAndCapitalLeaseObligations", "DebtCurrent"], []),
     (["LongTermDebtAndCapitalLeaseObligations"], ["LongTermDebtAndCapitalLeaseObligationsCurrent",
                                                  "ShortTermBorrowings", "CommercialPaper"]),
     (["DebtLongtermAndShorttermCombinedAmount"], []),
@@ -363,6 +374,8 @@ def prices(sym):
 # ---------------------------------------------------------------- sectors (from the SEC industry code)
 SECTORS = [  # key, label, SIC ranges (first match wins)
     ("blank_check", "Blank-check company", [(6770, 6770)]),
+    ("consumer", "Consumer and retail", [(2840, 2844), (3021, 3021)]),   # soaps and cosmetics, footwear
+    ("semis_hw", "Semiconductors and hardware", [(3559, 3559)]),          # incl. chip-making equipment
     ("software", "Software and internet", [(7370, 7379)]),
     ("health", "Health care", [(2833, 2836), (3841, 3851), (8000, 8099), (8731, 8731)]),
     ("semis_hw", "Semiconductors and hardware", [(3570, 3579), (3600, 3699), (3810, 3829)]),
@@ -412,6 +425,7 @@ RULES = {
     "fcf_yield":       ("Free cash flow yield", 0.0, 0.07, "pct"),
     "pe":              ("Price / earnings", 30.0, 8.0, "x"),
     "pb":              ("Price / book value", 3.0, 0.8, "x"),
+    "pe_alt":          ("Price / earnings (debt isn't filed in a standard form)", 30.0, 8.0, "x"),
     "roe":             ("Return on equity, last 12 months", 0.0, 0.15, "pct"),
     "net_margin":      ("Net margin, last 12 months", 0.0, 0.25, "pct"),
     "equity_assets":   ("Equity / total assets", 0.05, 0.15, "share"),
@@ -455,7 +469,7 @@ PILLARS = {  # name: (weight %, metrics, question)
         ("Balance sheet", 15, ["net_debt_ebitda", "interest_cover", "current_ratio", "runway_q"],
          "Could it get through a bad year?"),
         ("Dilution", 10, ["share_yoy", "sbc_pct", "dilution_itm", "dilution_all"], "Is your slice of the company shrinking?"),
-        ("Valuation", 20, ["ev_sales", "ev_ebit", "fcf_yield"], "Are you paying a fair price for what exists today?"),
+        ("Valuation", 20, ["ev_sales", "ev_ebit", "fcf_yield", "pe_alt"], "Are you paying a fair price for what exists today?"),
         ("Momentum", 10, ["ret_1y", "vs_ma200", "range_pos"], "What is the market saying?"),
     ],
     "financial": [
@@ -483,6 +497,7 @@ GRADES = [(8.0, "A", "Strong: the numbers back the price."),
 
 
 NO_DEBT, NET_CASH, SELF_FUNDING = 999.0, -1.0, 99.0  # special values with their own wording
+OPTIONAL = {"dilution_itm", "dilution_all", "pe_alt"}  # measures shown only where they apply
 
 
 def lin(x, bad, good):
@@ -517,43 +532,80 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
     cur = reporting_currency(cf)
     tags = {}
 
-    flows = {}
+    # income statement and cash flow items, merged across the tags companies use
+    raw = {}
     for key, tl in FLOW_TAGS.items():
-        s, used = series(cf, tl, cur)
-        flows[key] = (quarterly(s), annual(s))
+        raw[key], used = series(cf, tl, cur)
         if used:
             tags[key] = used
-    rq, ra = flows["revenue"]
-    if not rq and not ra:
+    if not raw["revenue"]:
         raise ScoreError(f"{name} hasn't filed revenue in a form this tool can read (no XBRL income statement).")
-    # gross profit: reported, or revenue minus cost of revenue
+    # gross profit: reported, or revenue minus cost of revenue, period by period
+    gp_raw = {}
+    for k, r in raw["revenue"].items():
+        if k in raw["gross_profit"]:
+            gp_raw[k] = raw["gross_profit"][k]
+        elif k in raw["cost_of_revenue"]:
+            gp_raw[k] = r - raw["cost_of_revenue"][k]
+    if len(gp_raw) > len(raw["gross_profit"]):
+        tags["gross_profit"] = tags.get("gross_profit", []) + ["revenue minus cost of revenue where gross profit isn't reported"]
+    raw["gross_profit"] = gp_raw
+    # operating profit: reported, or profit before tax plus interest expense where it isn't (an EBIT estimate)
+    pre, pre_used = series(cf, PRETAX_TAGS, cur)
+    filled = 0
+    for k, v in pre.items():
+        if k not in raw["operating_income"]:
+            raw["operating_income"][k] = v + raw["interest"].get(k, 0.0)
+            filled += 1
+    if filled:
+        tags["operating_income"] = tags.get("operating_income", []) + [
+            "profit before tax plus interest expense where operating profit isn't reported (" + ", ".join(pre_used) + ")"]
+    flows = {k: (quarterly(v), annual(v)) for k, v in raw.items()}
+    rq, ra = flows["revenue"]
     gq, ga = flows["gross_profit"]
-    cq, ca = flows["cost_of_revenue"]
-    if not gq and not ga and (cq or ca):
-        gq = {e: rq[e] - v for e, v in cq.items() if e in rq}
-        ga = {e: ra[e] - v for e, v in ca.items() if e in ra}
-        tags["gross_profit"] = ["revenue minus " + ", ".join(tags.get("cost_of_revenue", []))]
 
-    end = max(list(rq) + list(ra))  # latest reported period
-    if days(end, dt.date.today().isoformat()) > 400:
-        warnings.append(f"The latest financial statements are for the period ending {_qlabel(end)}: "
-                        "the company may have stopped filing, so the score may be out of date.")
-    T = lambda key, e=end: ttm(*flows[key], e) if key in flows else None
-    rev = T("revenue")
+    end = max(k[1] for k in raw["revenue"])  # latest reported period
+    forms = set(((sub.get("filings") or {}).get("recent") or {}).get("form") or [])
+    foreign = "20-F" in forms and "10-K" not in forms
+    if days(end, dt.date.today().isoformat()) > (520 if foreign else 400):
+        warnings.append(f"The latest financial statements in the SEC's data are for the period ending {_qlabel(end)}, "
+                        "so the score may be out of date.")
+    # twelve-month figures; a company with a short filing history uses its year to date, scaled to a year
     prev_end = year_before(list(rq) + list(ra), end)
-    rev_prev = ttm(rq, ra, prev_end) if prev_end else None
-    gp = ttm(gq, ga, end)
-    op, ni = T("operating_income"), T("net_income")
+    basis, ytd = ("ttm", None) if ttm(rq, ra, end) is not None else (None, None)
+    if basis is None:
+        spans = [k for k in raw["revenue"] if k[1] == end and k[0] and 80 <= days(k[0], end) <= 380]
+        if not spans:
+            raise ScoreError(f"Not enough of {name}'s figures are on file with the SEC to score it yet.")
+        ytd, basis = min(spans, key=lambda k: k[0]), "ytd"
+        months = round(days(ytd[0], end) / 30.4)
+        warnings.append(f"Only {months} months of figures are on file under {name}'s current SEC registration, so "
+                        "12-month figures are estimated from the year to date.")
+    scale = 365.0 / days(ytd[0], end) if ytd else 1.0
+    ytd_prev = None
+    if ytd:
+        span = days(ytd[0], ytd[1])
+        ytd_prev = next((k for k in raw["revenue"] if k[0] and abs(days(k[1], end) - 365) <= 20
+                         and abs(days(k[0], k[1]) - span) <= 10), None)
+
+    def T(key, prev=False):
+        if basis == "ttm":
+            e = prev_end if prev else end
+            return ttm(*flows[key], e) if e else None
+        k = ytd_prev if prev else ytd
+        v = raw[key].get(k) if k else None
+        return v * scale if v is not None else None
+
+    rev, rev_prev = T("revenue"), T("revenue", prev=True)
+    gp, op, ni = T("gross_profit"), T("operating_income"), T("net_income")
     ocf, capex = T("ocf"), T("capex")
     fcf = ocf - (capex or 0) if ocf is not None else None
     sbc, dna, interest = T("sbc"), T("dna"), T("interest")
-    op_prev = ttm(*flows["operating_income"], prev_end) if prev_end else None
-    end3 = None
-    for k in sorted(set(rq) | set(ra), reverse=True):
-        if abs(days(k, end) - 3 * 365) <= 25:
-            end3 = k
-            break
-    rev3 = ttm(rq, ra, end3) if end3 else None
+    op_prev = T("operating_income", prev=True)
+    rev3 = None
+    if basis == "ttm":
+        end3 = next((k for k in sorted(set(rq) | set(ra), reverse=True) if abs(days(k, end) - 3 * 365) <= 25), None)
+        rev3 = ttm(rq, ra, end3) if end3 else None
 
     # balance sheet at the latest date total assets were reported
     inst = {}
@@ -568,31 +620,67 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
     debt, debt_tags = total_debt(cf, cur, bs_end)
     if debt_tags:
         tags["debt"] = debt_tags
+    else:
+        # no standard debt figure: a company that borrows or pays interest has debt filed some other way
+        active = False
+        for tag in DEBT_ACTIVITY_TAGS:
+            ser, _ = series(cf, [tag], cur)
+            if any(st and days(e, end) <= 450 and abs(v) > 0.01 * (rev or 0) for (st, e), v in ser.items()):
+                active = True
+                break
+        if active or (interest and rev and interest > 0.003 * rev):
+            debt = None
+            warnings.append(f"{name} doesn't file its total debt in a standard form, so debt-based measures "
+                            "(net debt, enterprise value) are left out and valuation uses price / earnings instead.")
     equity = bal["equity"]
     equity_prev = at(inst["equity"], year_before(list(inst["equity"]), bs_end) or "1900-01-01")
 
-    # shares
+    # shares: the cover page count, checked against net income / earnings per share
     cover, cover_date = shares_now(cf)
     basic_q, basic_a = weighted_shares(cf, "WeightedAverageNumberOfSharesOutstandingBasic")
     dil_q, dil_a = weighted_shares(cf, "WeightedAverageNumberOfDilutedSharesOutstanding")
     basic_end = max(basic_q) if basic_q else (max(basic_a) if basic_a else None)
     basic = (basic_q or basic_a).get(basic_end) if basic_end else None
-    shares, shares_src = cover, "cover page of the latest filing"
-    if shares is None or (basic and not 0.5 <= shares / basic <= 2.0):
-        shares, shares_src = basic, "weighted average for the latest quarter"
-        if cover and basic:
-            warnings.append("Share classes are hard to add up for this company; the share count uses the weighted "
-                            "average from its latest quarter.")
+    implied = None
+    eps, _ = series(cf, ["EarningsPerShareBasic", "BasicEarningsLossPerShare"], cur + "/shares")
+    nq = flows["net_income"][0]
+    epq = {e: v for (st, e), v in eps.items() if st and 80 <= days(st, e) <= 100 and v}
+    common = sorted(set(epq) & set(nq))
+    if common and nq[common[-1]] and nq[common[-1]] / epq[common[-1]] > 0:
+        implied = nq[common[-1]] / epq[common[-1]]
+    shares, shares_src = None, ""
+    if ticker in CLASS_FACTOR and basic:
+        shares = basic * CLASS_FACTOR[ticker]
+        shares_src = CLASS_NOTE[ticker]
+    else:
+        cands = []
+        if cover:
+            cands.append((cover, "cover page of the latest filing"))
+        if basic:
+            cands.append((basic, "weighted average for the latest quarter"))
+            for mult, word in ((1e3, "thousands"), (1e6, "millions")):
+                cands.append((basic * mult, f"weighted average, corrected: the filing gives it in {word} without saying so"))
+        if implied and cover and abs(math.log(cover / implied)) <= math.log(1.5):
+            shares, shares_src = cover, "cover page of the latest filing"   # rounded EPS can't separate close counts
+        elif implied and cands:
+            shares, shares_src = min(cands, key=lambda c: abs(math.log(c[0] / implied)))
+        elif cover and (not basic or 0.5 <= cover / basic <= 2.0):
+            shares, shares_src = cover, "cover page of the latest filing"
+        elif basic:
+            shares, shares_src = basic, "weighted average for the latest quarter"
+    plausible = lambda r: r is not None and abs(math.log(max(r, 1e-9))) <= math.log(3)
     share_yoy = None
     if basic_q:
         e0 = max(basic_q)
         e1 = year_before(list(basic_q), e0)
-        share_yoy = _div(basic_q[e0], basic_q[e1]) - 1 if e1 and basic_q.get(e1) else None
+        r = _div(basic_q[e0], basic_q.get(e1)) if e1 else None
+        share_yoy = r - 1 if plausible(r) else None
     dilution_itm = None
     if basic_q and dil_q:
         e0 = max(set(basic_q) & set(dil_q), default=None)
         if e0 and ni and ni > 0:
-            dilution_itm = max(0.0, dil_q[e0] / basic_q[e0] - 1)
+            r = dil_q[e0] / basic_q[e0]
+            dilution_itm = max(0.0, r - 1) if plausible(r) else None
     anti, anti_end = None, None
     s, _ = series(cf, ["AntidilutiveSecuritiesExcludedFromComputationOfEarningsPerShareAmount"], "shares")
     by_end = {}
@@ -610,8 +698,11 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
     if px and not usd_ok:
         warnings.append(f"The statements are in {cur} and the share price in {px.get('currency')}: valuation "
                         "measures are left out rather than converted.")
-    mcap = price * shares if (usd_ok and shares) else None
-    ev = mcap + debt - cash if mcap is not None else None
+    if foreign and px:
+        warnings.append("This is a foreign company filing annual 20-F reports: its US-traded shares are often depositary "
+                        "shares that each stand for several ordinary shares, so valuation measures are left out rather than guessed.")
+    mcap = price * shares if (usd_ok and shares and not foreign) else None
+    ev = mcap + debt - cash if mcap is not None and debt is not None else None
     ebitda = op + dna if op is not None and dna is not None else None
 
     burn = None
@@ -627,7 +718,7 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
         "op_margin_chg": (op / rev - op_prev / rev_prev) if (op is not None and op_prev is not None and rev and rev_prev
                                                             and rev > 0 and rev_prev > 0) else None,
         "fcf_margin": _div(fcf, rev) if rev and rev > 0 else None,
-        "net_debt_ebitda": ((debt - cash) / ebitda if ebitda and ebitda > 0 else None),
+        "net_debt_ebitda": ((debt - cash) / ebitda if debt is not None and ebitda and ebitda > 0 else None),
         "interest_cover": (_div(op, interest) if interest and interest > 0 and rev and abs(interest) > 0.002 * rev else None),
         "current_ratio": _div(bal["current_assets"], bal["current_liabilities"]),
         "runway_q": runway,
@@ -639,6 +730,7 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
         "ev_ebit": (_div(ev, op) if ev is not None and op and op > 0 else None),
         "fcf_yield": _div(fcf, mcap) if mcap else None,
         "pe": (_div(mcap, ni) if mcap and ni and ni > 0 else None),
+        "pe_alt": (_div(mcap, ni) if debt is None and mcap and ni and ni > 0 else None),
         "pb": (_div(mcap, equity) if mcap and equity and equity > 0 else None),
         "roe": (_div(ni, (equity + equity_prev) / 2 if equity_prev else equity) if ni is not None and equity and equity > 0 else None),
         "net_margin": _div(ni, rev) if rev and rev > 0 else None,
@@ -652,9 +744,10 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
         if e1 and rq[e1] and rq[e1] > 0:
             m["rev_q_yoy"] = rq[end] / rq[e1] - 1
     # a loss-maker with no debt cost: leverage measures don't apply; a profitable one with no interest: very safe
-    if m["interest_cover"] is None and op is not None and op > 0 and (not interest or interest <= 0.002 * (rev or 1)) and debt <= 0.05 * (rev or 1):
+    if m["interest_cover"] is None and op is not None and op > 0 and (not interest or interest <= 0.002 * (rev or 1)) \
+            and debt is not None and debt <= 0.05 * (rev or 1):
         m["interest_cover"] = NO_DEBT
-    if ebitda is not None and ebitda <= 0 and debt - cash <= 0:
+    if ebitda is not None and ebitda <= 0 and debt is not None and debt - cash <= 0:
         m["net_debt_ebitda"] = NET_CASH  # net cash: no leverage at all
 
     notes = {}
@@ -675,8 +768,8 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
         for k in keys:
             label, bad, good, f = rule(k, sector)
             v = m.get(k)
-            if k in ("dilution_itm", "dilution_all") and v is None:
-                continue  # only one of the two applies (profitable vs loss-making)
+            if k in OPTIONAL and v is None:
+                continue  # only shown where it applies (e.g. profitable vs loss-making)
             items.append({"key": k, "label": label, "value": v, "text": fmt(v, f), "score": lin(v, bad, good), "fmt": f,
                           "bad": bad, "good": good, "rule": f"0 points at {fmt(bad, f)}, 10 points at {fmt(good, f)}",
                           "note": notes.get(k)})
