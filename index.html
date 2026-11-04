@@ -308,7 +308,8 @@ or investment advice. See also the in-depth <a href="https://thisisfed.github.io
       ["Share price", px ? (px.currency && px.currency !== "USD" ? px.currency + " " : "$") + px.price.toFixed(2) : "n/a", px ? "close " + date(px.date) : "unavailable just now"],
       ["Market cap", money(f.market_cap, f.value_currency || cur), f.ev != null ? "enterprise value " + money(f.ev, f.value_currency || cur) : ""],
       ["Revenue", money(f.revenue_ttm, cur), "last 12 months"],
-      ["Free cash flow", money(f.fcf_ttm, cur), "last 12 months"]
+      r.model === "financial" ? ["Net income", money(f.net_income_ttm, cur), "last 12 months"]
+                              : ["Free cash flow", money(f.fcf_ttm, cur), "last 12 months"]
     ];
     var h = "";
     if (r.ticker === "OPEN") h += '<div class="card"><div class="banner"><span>There’s an in-depth Opendoor scorecard, with Opendoor’s own tracker, debt split and dilution line by line.</span>' +
@@ -344,11 +345,12 @@ or investment advice. See also the in-depth <a href="https://thisisfed.github.io
     }
     if (r.quarters && r.quarters.length) {
       var neg = function (v, txt) { return '<td class="' + (v != null && v < 0 ? "neg" : "") + '">' + txt + "</td>"; };
+      var bank = r.model === "financial";  // a bank's cash flow is mostly deposits moving: not shown
       h += '<p class="section">Quarterly results</p><div class="card"><div class="hd"><div><h2>Last ' + r.quarters.length + ' quarters</h2><p class="sub">From the company’s 10-Q and 10-K filings' +
         (cur !== "USD" ? ", in " + esc(cur) : "") + '</p></div></div><div class="bd scroll" style="padding-top:4px"><table><tr><th>Quarter ended</th><th>Revenue</th><th>Gross margin</th>' +
-        "<th>Operating margin</th><th>Net income</th><th>Free cash flow</th></tr>" + r.quarters.map(function (x) {
+        "<th>Operating margin</th><th>Net income</th>" + (bank ? "" : "<th>Free cash flow</th>") + "</tr>" + r.quarters.map(function (x) {
           return "<tr><td>" + esc(date(x.end)) + "</td><td>" + money(x.revenue, cur) + "</td>" + neg(x.gross_margin, pct(x.gross_margin)) + neg(x.op_margin, pct(x.op_margin)) +
-            neg(x.net_income, money(x.net_income, cur)) + neg(x.fcf, money(x.fcf, cur)) + "</tr>";
+            neg(x.net_income, money(x.net_income, cur)) + (bank ? "" : neg(x.fcf, money(x.fcf, cur))) + "</tr>";
         }).join("") + "</table></div></div>";
     }
     var tagText = Object.keys(r.tags || {}).map(function (k) { return k.replace(/_/g, " ") + ": " + r.tags[k].join(" + "); }).join("; ");

@@ -14,6 +14,10 @@ on:
         description: "Instead, list what one company files: TICKER [regex]"
         required: false
         default: ""
+      site:
+        description: "Instead, test the live site at this address (e.g. https://stock-scorecard.vercel.app)"
+        required: false
+        default: ""
 
 jobs:
   check:
@@ -25,8 +29,11 @@ jobs:
           python-version: "3.12"
       - name: Unit tests
         run: python3 tests/test_engine.py
+      - name: Test the live site
+        if: ${{ github.event.inputs.site }}
+        run: python3 tools/smoke.py "${{ github.event.inputs.site }}"
       - name: Score real companies
-        if: ${{ !github.event.inputs.inspect }}
+        if: ${{ !github.event.inputs.inspect && !github.event.inputs.site }}
         env:
           SEC_UA: ${{ secrets.SEC_UA }}
           DUMP_JSON: ${{ github.event.inputs.tickers }}
