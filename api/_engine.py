@@ -702,16 +702,18 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings, fx=None):
             shares, shares_src = basic, "weighted average for the latest quarter"
     plausible = lambda r: r is not None and abs(math.log(max(r, 1e-9))) <= math.log(3)
     share_yoy = None
-    if basic_q:
-        e0 = max(basic_q)
-        e1 = year_before(list(basic_q), e0)
-        r = _div(basic_q[e0], basic_q.get(e1)) if e1 else None
+    bq = basic_q or basic_a  # companies that only report yearly: compare years
+    if bq:
+        e0 = max(bq)
+        e1 = year_before(list(bq), e0)
+        r = _div(bq[e0], bq.get(e1)) if e1 else None
         share_yoy = r - 1 if plausible(r) else None
     dilution_itm = None
-    if basic_q and dil_q:
-        e0 = max(set(basic_q) & set(dil_q), default=None)
+    dq_ = dil_q if basic_q else dil_a
+    if bq and dq_:
+        e0 = max(set(bq) & set(dq_), default=None)
         if e0 and ni and ni > 0:
-            r = dil_q[e0] / basic_q[e0]
+            r = dq_[e0] / bq[e0]
             dilution_itm = max(0.0, r - 1) if plausible(r) else None
     anti, anti_end = None, None
     s, _ = series(cf, ["AntidilutiveSecuritiesExcludedFromComputationOfEarningsPerShareAmount"], "shares")
@@ -903,8 +905,10 @@ def score_ticker(raw):
                 px = None
                 warnings.append("The share price couldn't be fetched just now, so valuation and momentum are left "
                                 "out. Try again later for the full score.")
-        cur = reporting_currency(cf)
-        fx = fx_rate(cur, (px or {}).get("currency") or "USD") if px and cur != ((px or {}).get("currency") or "USD") else None
+        cur, pcur = reporting_currency(cf), (px or {}).get("currency") or "USD"
+        forms = set(((sub.get("filings") or {}).get("recent") or {}).get("form") or [])
+        foreign = "20-F" in forms and "10-K" not in forms   # valuation is left out for these anyway
+        fx = fx_rate(cur, pcur) if px and cur != pcur and not foreign else None
         out = build(t, cik, name, exchange, sub, cf, px, warnings, fx=fx)
         out["generated"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
         return out

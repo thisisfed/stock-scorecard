@@ -29,6 +29,7 @@ jobs:
         if: ${{ !github.event.inputs.inspect }}
         env:
           SEC_UA: ${{ secrets.SEC_UA }}
+          DUMP_JSON: ${{ github.event.inputs.tickers }}
         run: python3 tools/check.py ${{ github.event.inputs.tickers }}
       - name: Inspect one company's filings
         if: ${{ github.event.inputs.inspect }}

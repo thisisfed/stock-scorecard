@@ -25,6 +25,8 @@ for t in tickers:
         E.report(r)
         with open(f"out/{E.norm_ticker(t)}.json", "w") as fh:
             json.dump(r, fh, default=str)
+        if os.environ.get("DUMP_JSON"):
+            print("JSONOUT " + json.dumps(r, default=str, separators=(",", ":")))
         s = r["score"]
         rows.append(f"{t:<6} {s['overall']:5.2f} {s['grade']}  {r['sector']['key']:<13} {r['currency']} "
                     + " ".join(f"{p['name'][:4]}={p['score']}" for p in s["pillars"])
