@@ -1,0 +1,33 @@
+name: Check scores on real companies
+
+on:
+  push:
+    branches: [main]
+    paths: ["api/**", "tools/**", "tests/**"]
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Tickers to check, separated by spaces (blank = the standard list)"
+        required: false
+        default: ""
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests
+        run: python3 tests/test_engine.py
+      - name: Score real companies
+        env:
+          SEC_UA: ${{ secrets.SEC_UA }}
+        run: python3 tools/check.py ${{ github.event.inputs.tickers }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scores
+          path: out/
+          retention-days: 7
