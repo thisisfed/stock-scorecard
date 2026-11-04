@@ -306,7 +306,7 @@ or investment advice. See also the in-depth <a href="https://thisisfed.github.io
     glow(s.overall);
     var kpis = [
       ["Share price", px ? (px.currency && px.currency !== "USD" ? px.currency + " " : "$") + px.price.toFixed(2) : "n/a", px ? "close " + date(px.date) : "unavailable just now"],
-      ["Market cap", money(f.market_cap, cur), f.ev != null ? "enterprise value " + money(f.ev, cur) : ""],
+      ["Market cap", money(f.market_cap, f.value_currency || cur), f.ev != null ? "enterprise value " + money(f.ev, f.value_currency || cur) : ""],
       ["Revenue", money(f.revenue_ttm, cur), "last 12 months"],
       ["Free cash flow", money(f.fcf_ttm, cur), "last 12 months"]
     ];

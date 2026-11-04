@@ -93,7 +93,7 @@ shares, sd = E.shares_now(cf)
 assert shares == 98e6 and sd == "2026-07-25", (shares, sd)
 print("TTM, debt (no double counting), share classes OK")
 assert E.sector_of("7372")[0] == "software" and E.sector_of("6531")[0] == "real_estate" and E.sector_of("6021")[0] == "financial"
-assert E.sector_of("2834")[0] == "health" and E.sector_of("5331")[0] == "consumer" and E.sector_of("6770")[0] == "blank_check"
+assert E.sector_of("2834")[0] == "health" and E.sector_of("5331")[0] == "retail" and E.sector_of("6770")[0] == "blank_check"
 assert E.sector_of("3674")[0] == "semis_hw" and E.sector_of("1311")[0] == "energy" and E.sector_of(None)[0] == "other"
 print("sectors OK")
 
@@ -137,6 +137,15 @@ except E.ScoreError as e:
 print("no price, bank model, SPAC refusal OK")
 assert E.norm_ticker(" brk.b ") == "BRK-B" and E.norm_ticker("aapl") == "AAPL"
 assert E.sector_of("2840")[0] == "consumer" and E.sector_of("3021")[0] == "consumer" and E.sector_of("3559")[0] == "semis_hw"
+assert [E.sector_of(c)[0] for c in ("5331", "4911", "4610", "3826", "3600", "4700", "4731", "3571", "3663")] == \
+    ["retail", "utilities", "energy", "health", "industrial", "consumer", "industrial", "semis_hw", "semis_hw"]
+# statements in another currency, shares trading one for one: valuation converted at today's rate
+r12 = E.build("CAN", 1, "Canco", "NYSE", sub, {"facts": {"us-gaap": {k: {"units": {("CAD" if u == "USD" else u): v for u, v in n["units"].items()}}
+              for k, n in cf["facts"]["us-gaap"].items()}, "dei": dei}}, px, [], fx=0.5)
+assert r12["currency"] == "CAD" and abs(r12["facts"]["ev"] - (50.0 * 98e6 + 220.0 * 0.5)) < 1e-3
+m12 = {i["key"]: i for p in r12["score"]["pillars"] for i in p["metrics"]}
+assert abs(m12["ev_sales"]["value"] - r12["facts"]["ev"] / (r12["facts"]["revenue_ttm"] * 0.5)) < 1e-9
+print("currency conversion and industries OK")
 import copy
 
 

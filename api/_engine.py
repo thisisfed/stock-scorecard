@@ -275,6 +275,11 @@ DEBT_WAYS = [
     (["LongTermDebtAndCapitalLeaseObligations"], ["LongTermDebtAndCapitalLeaseObligationsCurrent",
                                                  "ShortTermBorrowings", "CommercialPaper"]),
     (["DebtLongtermAndShorttermCombinedAmount"], []),
+    (["LongTermNotesAndLoans", "NotesPayableCurrent"], []),
+    (["LongTermNotesAndLoans", "DebtCurrent"], []),
+    (["LongTermNotesAndLoans"], []),
+    (["LongTermNotesPayable", "NotesPayableCurrent"], []),
+    (["LongTermNotesPayable", "DebtCurrent"], []),
     (["Borrowings"], []),
     (["NoncurrentBorrowings"], ["CurrentBorrowings"]),
     ([], ["ConvertibleDebtNoncurrent", "ConvertibleDebtCurrent", "ConvertibleNotesPayable",
@@ -312,8 +317,8 @@ def shares_now(cf):
     return float(sum(set(vals))), end
 
 
-def weighted_shares(cf, tag):
-    s, _ = series(cf, [tag], "shares")
+def weighted_shares(cf, tags):
+    s, _ = series(cf, tags, "shares")
     q = {e: v for (st, e), v in s.items() if st and 80 <= days(st, e) <= 100}
     return q, annual(s)
 
@@ -371,21 +376,39 @@ def prices(sym):
     raise RuntimeError("; ".join(errors))
 
 
+def fx_rate(cur, to="USD"):
+    """Units of `to` per one `cur` (ECB reference rates via Frankfurter; open.er-api.com as backup)."""
+    def load():
+        for url, pick in ((f"https://api.frankfurter.app/latest?from={cur}&to={to}", lambda j: j["rates"][to]),
+                          (f"https://open.er-api.com/v6/latest/{cur}", lambda j: j["rates"][to])):
+            try:
+                v = float(pick(json.loads(get(url, timeout=10))))
+                if v > 0:
+                    return v
+            except Exception:
+                continue
+        return None
+    return cached(f"fx:{cur}:{to}", 6 * 3600, load)
+
+
 # ---------------------------------------------------------------- sectors (from the SEC industry code)
 SECTORS = [  # key, label, SIC ranges (first match wins)
     ("blank_check", "Blank-check company", [(6770, 6770)]),
-    ("consumer", "Consumer and retail", [(2840, 2844), (3021, 3021)]),   # soaps and cosmetics, footwear
+    ("consumer", "Consumer brands and services", [(2840, 2844), (3021, 3021), (4700, 4700), (4720, 4729)]),
     ("semis_hw", "Semiconductors and hardware", [(3559, 3559)]),          # incl. chip-making equipment
+    ("health", "Health care", [(3826, 3826)]),                            # laboratory instruments
+    ("utilities", "Utilities", [(4900, 4999)]),
+    ("energy", "Energy and materials", [(4610, 4619)]),                   # pipelines
     ("software", "Software and internet", [(7370, 7379)]),
     ("health", "Health care", [(2833, 2836), (3841, 3851), (8000, 8099), (8731, 8731)]),
-    ("semis_hw", "Semiconductors and hardware", [(3570, 3579), (3600, 3699), (3810, 3829)]),
+    ("semis_hw", "Semiconductors and hardware", [(3570, 3579), (3661, 3679), (3695, 3695), (3823, 3825), (3827, 3829)]),
     ("financial", "Banks, insurance and finance", [(6000, 6499)]),
     ("real_estate", "Real estate and homebuilding", [(1520, 1799), (6500, 6599), (6798, 6798)]),
-    ("energy", "Energy, materials and utilities", [(1000, 1499), (2800, 2899), (2900, 2999), (3300, 3399),
-                                                   (4900, 4999)]),
+    ("energy", "Energy and materials", [(1000, 1499), (2800, 2899), (2900, 2999), (3300, 3399)]),
     ("telecom_media", "Telecom and media", [(4800, 4899), (2700, 2799), (7800, 7899)]),
-    ("consumer", "Consumer and retail", [(2000, 2399), (3140, 3199), (3630, 3651), (3940, 3949), (5000, 5999),
-                                         (7000, 7299), (7900, 7999)]),
+    ("retail", "Retail and wholesale", [(5000, 5999)]),
+    ("consumer", "Consumer brands and services", [(2000, 2399), (3140, 3199), (3630, 3651), (3940, 3949),
+                                                  (7000, 7299), (7900, 7999)]),
     ("industrial", "Industrials and transport", [(2400, 3999), (4000, 4799), (8700, 8799)]),
     ("other", "Other", [(0, 9999)]),
 ]
@@ -444,9 +467,16 @@ SECTOR_RULES = {
     "health":        {"gross_margin": (0.30, 0.80), "op_margin": (-0.20, 0.25), "fcf_margin": (-0.20, 0.20),
                       "ev_sales": (12.0, 2.0), "ev_ebit": (45.0, 12.0), "rev_q_yoy": (-0.05, 0.25),
                       "rev_ttm_yoy": (-0.05, 0.25)},
-    "consumer":      {"gross_margin": (0.15, 0.50), "op_margin": (0.0, 0.15), "fcf_margin": (-0.02, 0.10),
-                      "ev_sales": (3.0, 0.4), "ev_ebit": (35.0, 9.0), "rev_q_yoy": (-0.05, 0.12),
+    "consumer":      {"gross_margin": (0.30, 0.62), "op_margin": (0.03, 0.22), "fcf_margin": (0.0, 0.15),
+                      "ev_sales": (5.0, 1.0), "ev_ebit": (32.0, 10.0), "rev_q_yoy": (-0.05, 0.12),
                       "rev_ttm_yoy": (-0.05, 0.12), "rev_cagr_3y": (-0.03, 0.10)},
+    "retail":        {"gross_margin": (0.10, 0.40), "op_margin": (0.0, 0.10), "fcf_margin": (-0.01, 0.06),
+                      "ev_sales": (2.0, 0.3), "ev_ebit": (32.0, 9.0), "rev_q_yoy": (-0.03, 0.12),
+                      "rev_ttm_yoy": (-0.03, 0.12), "rev_cagr_3y": (-0.02, 0.10)},
+    "utilities":     {"gross_margin": (0.20, 0.60), "op_margin": (0.08, 0.30), "fcf_margin": (-0.25, 0.10),
+                      "ev_sales": (8.0, 2.5), "ev_ebit": (30.0, 13.0), "rev_q_yoy": (-0.05, 0.08),
+                      "rev_ttm_yoy": (-0.05, 0.08), "rev_cagr_3y": (-0.02, 0.07), "net_debt_ebitda": (7.0, 3.0),
+                      "interest_cover": (1.5, 5.0), "current_ratio": (0.5, 1.2), "runway_q": (2.0, 8.0)},
     "industrial":    {"gross_margin": (0.15, 0.45), "op_margin": (0.0, 0.18), "fcf_margin": (-0.03, 0.12),
                       "ev_sales": (4.0, 0.8), "ev_ebit": (35.0, 10.0), "rev_q_yoy": (-0.05, 0.12),
                       "rev_ttm_yoy": (-0.05, 0.12), "rev_cagr_3y": (-0.03, 0.10)},
@@ -458,7 +488,8 @@ SECTOR_RULES = {
                       "rev_ttm_yoy": (-0.05, 0.12), "net_debt_ebitda": (5.0, 1.0)},
     "real_estate":   {"gross_margin": (0.05, 0.40), "op_margin": (0.0, 0.30), "fcf_margin": (-0.10, 0.15),
                       "ev_sales": (10.0, 1.0), "ev_ebit": (35.0, 10.0), "net_debt_ebitda": (8.0, 2.0)},
-    "financial":     {"rev_q_yoy": (-0.05, 0.12), "rev_ttm_yoy": (-0.05, 0.12), "rev_cagr_3y": (-0.03, 0.10)},
+    "financial":     {"rev_q_yoy": (-0.05, 0.12), "rev_ttm_yoy": (-0.05, 0.12), "rev_cagr_3y": (-0.03, 0.10),
+                      "equity_assets": (0.04, 0.12)},
 }
 
 PILLARS = {  # name: (weight %, metrics, question)
@@ -522,7 +553,7 @@ def _qlabel(end, fy_end=None):
     return f"{d.strftime('%b')} {d.day}, {d.year}"
 
 
-def build(ticker, cik, name, exchange, sub, cf, px, warnings):
+def build(ticker, cik, name, exchange, sub, cf, px, warnings, fx=None):
     """Turn raw SEC data and prices into metrics, pillar scores and the overall score."""
     sic = sub.get("sic")
     sector, sector_label = sector_of(sic)
@@ -630,6 +661,7 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
                 break
         if active or (interest and rev and interest > 0.003 * rev):
             debt = None
+        if debt is None and model == "operating":
             warnings.append(f"{name} doesn't file its total debt in a standard form, so debt-based measures "
                             "(net debt, enterprise value) are left out and valuation uses price / earnings instead.")
     equity = bal["equity"]
@@ -637,8 +669,8 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
 
     # shares: the cover page count, checked against net income / earnings per share
     cover, cover_date = shares_now(cf)
-    basic_q, basic_a = weighted_shares(cf, "WeightedAverageNumberOfSharesOutstandingBasic")
-    dil_q, dil_a = weighted_shares(cf, "WeightedAverageNumberOfDilutedSharesOutstanding")
+    basic_q, basic_a = weighted_shares(cf, ["WeightedAverageNumberOfSharesOutstandingBasic", "WeightedAverageShares"])
+    dil_q, dil_a = weighted_shares(cf, ["WeightedAverageNumberOfDilutedSharesOutstanding", "AdjustedWeightedAverageShares"])
     basic_end = max(basic_q) if basic_q else (max(basic_a) if basic_a else None)
     basic = (basic_q or basic_a).get(basic_end) if basic_end else None
     implied = None
@@ -694,15 +726,22 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
 
     # market value (only when the price and the statements are in the same currency)
     price = px["price"] if px else None
-    usd_ok = px is not None and (px.get("currency") or "USD") == cur
-    if px and not usd_ok:
-        warnings.append(f"The statements are in {cur} and the share price in {px.get('currency')}: valuation "
-                        "measures are left out rather than converted.")
+    pcur = (px or {}).get("currency") or "USD"
+    k = 1.0  # statement currency -> share price currency
+    usd_ok = px is not None and pcur == cur
+    if px and pcur != cur and not foreign:
+        if fx:
+            k, usd_ok = fx, True
+            warnings.append(f"The statements are in {cur}; for valuation they're converted to {pcur} at today's "
+                            f"rate (1 {cur} = {fx:.4f} {pcur}).")
+        else:
+            warnings.append(f"The statements are in {cur} and the share price in {pcur}, and the exchange rate couldn't "
+                            "be fetched, so valuation measures are left out this time.")
     if foreign and px:
         warnings.append("This is a foreign company filing annual 20-F reports: its US-traded shares are often depositary "
                         "shares that each stand for several ordinary shares, so valuation measures are left out rather than guessed.")
     mcap = price * shares if (usd_ok and shares and not foreign) else None
-    ev = mcap + debt - cash if mcap is not None and debt is not None else None
+    ev = mcap + (debt - cash) * k if mcap is not None and debt is not None else None
     ebitda = op + dna if op is not None and dna is not None else None
 
     burn = None
@@ -726,12 +765,12 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
         "sbc_pct": _div(sbc, rev) if rev and rev > 0 else None,
         "dilution_itm": dilution_itm,
         "dilution_all": dilution_all,
-        "ev_sales": _div(ev, rev) if ev is not None and rev and rev > 0 else None,
-        "ev_ebit": (_div(ev, op) if ev is not None and op and op > 0 else None),
-        "fcf_yield": _div(fcf, mcap) if mcap else None,
-        "pe": (_div(mcap, ni) if mcap and ni and ni > 0 else None),
-        "pe_alt": (_div(mcap, ni) if debt is None and mcap and ni and ni > 0 else None),
-        "pb": (_div(mcap, equity) if mcap and equity and equity > 0 else None),
+        "ev_sales": _div(ev, rev * k) if ev is not None and rev and rev > 0 else None,
+        "ev_ebit": (_div(ev, op * k) if ev is not None and op and op > 0 else None),
+        "fcf_yield": _div(fcf * k, mcap) if mcap and fcf is not None else None,
+        "pe": (_div(mcap, ni * k) if mcap and ni and ni > 0 else None),
+        "pe_alt": (_div(mcap, ni * k) if debt is None and mcap and ni and ni > 0 else None),
+        "pb": (_div(mcap, equity * k) if mcap and equity and equity > 0 else None),
         "roe": (_div(ni, (equity + equity_prev) / 2 if equity_prev else equity) if ni is not None and equity and equity > 0 else None),
         "net_margin": _div(ni, rev) if rev and rev > 0 else None,
         "equity_assets": _div(equity, bal["assets"]),
@@ -816,6 +855,7 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings):
         "facts": {"period_end": end, "balance_sheet_date": bs_end, "revenue_ttm": rev, "gross_profit_ttm": gp,
                   "operating_income_ttm": op, "net_income_ttm": ni, "fcf_ttm": fcf, "cash": cash, "debt": debt,
                   "equity": equity, "shares": shares, "shares_source": shares_src, "market_cap": mcap, "ev": ev,
+                  "value_currency": pcur, "fx": k if k != 1.0 else None,
                   "potential_shares": anti},
         "quarters": qrows,
         "tags": tags,
@@ -863,7 +903,9 @@ def score_ticker(raw):
                 px = None
                 warnings.append("The share price couldn't be fetched just now, so valuation and momentum are left "
                                 "out. Try again later for the full score.")
-        out = build(t, cik, name, exchange, sub, cf, px, warnings)
+        cur = reporting_currency(cf)
+        fx = fx_rate(cur, (px or {}).get("currency") or "USD") if px and cur != ((px or {}).get("currency") or "USD") else None
+        out = build(t, cik, name, exchange, sub, cf, px, warnings, fx=fx)
         out["generated"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
         return out
     return cached(f"score:{t}", 1800, fetch)
