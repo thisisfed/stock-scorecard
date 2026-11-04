@@ -1,0 +1,439 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Scorecard: any US stock, scored 0–10</title>
+<meta name="description" content="Type a ticker and get an independent 0–10 score built on the spot from the company's SEC filings and its share price.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><meta name="theme-color" content="#f3f2f0">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#23201d;--muted:#786e64;--muted2:#5d554d;--line:#ebe7e2;--bg:#f3f2f0;--blue:#1d4ed8;
+--g1:hsla(250,80%,84%,.5);--g2:hsla(215,85%,82%,.5);--g3:hsla(285,80%,85%,.42)}
+*{box-sizing:border-box}
+html{background:#f9f8f8;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;color:var(--ink);font:400 15px/1.5 Inter,system-ui,-apple-system,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+letter-spacing:-.011em;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;
+background:radial-gradient(80% 40% at 10% 0%,var(--g1) 0%,rgba(0,0,0,0) 60%),
+radial-gradient(65% 35% at 50% 0%,var(--g2) 0%,rgba(0,0,0,0) 58%),
+radial-gradient(50% 30% at 88% 0%,var(--g3) 0%,rgba(0,0,0,0) 50%),var(--bg);background-repeat:no-repeat;transition:background .6s}
+a{color:inherit}
+button{font:inherit;color:inherit}
+.bar{background:rgba(255,255,255,.92);backdrop-filter:saturate(1.4) blur(8px);position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(0,0,0,.04)}
+.bar .in{max-width:1280px;margin:0 auto;padding:12px 24px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px}
+.bar .in>*{grid-row:1}
+.brand{grid-column:2;text-align:center;font-weight:600;font-size:18px;line-height:1.25;letter-spacing:-.02em;text-decoration:none}
+.brand small{display:block;font-weight:400;color:var(--muted);font-size:12.5px;margin-top:2px;letter-spacing:0}
+.by{grid-column:3;justify-self:end;font-size:13px;color:var(--muted);text-decoration:none;white-space:nowrap;padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.by:hover{color:var(--ink)}
+.wrap{max-width:1280px;margin:0 auto;padding:0 24px 120px}
+.hero{padding:72px 0 40px;transition:padding .3s}
+h1{font-size:clamp(46px,8.4vw,92px);line-height:1;font-weight:500;letter-spacing:-.034em;margin:0 0 20px}
+.lede{font-size:18px;color:var(--muted2);max-width:560px;margin:0 0 28px}
+.hero.compact{padding:28px 0 8px}.hero.compact h1,.hero.compact .lede{display:none}
+.search{position:relative;max-width:640px}
+.search .box{display:flex;align-items:center;background:#fff;border-radius:18px;box-shadow:0 1px 2px rgba(35,32,29,.06),0 8px 30px rgba(35,32,29,.07);
+border:1px solid #ece8e3;padding:6px 6px 6px 20px;transition:box-shadow .2s,border-color .2s}
+.search .box:focus-within{border-color:#c9c2ba;box-shadow:0 1px 2px rgba(35,32,29,.06),0 10px 34px rgba(35,32,29,.1)}
+.search input{flex:1;min-width:0;border:0;outline:0;background:none;font-family:inherit;font-size:20px;font-weight:500;line-height:1.3;letter-spacing:-.02em;padding:10px 0;color:var(--ink)}
+.search input::placeholder{color:#a69d93;font-weight:400}
+.search button[type=submit]{border:0;background:var(--ink);color:#fff;border-radius:13px;padding:12px 20px;font-weight:500;font-size:15px;cursor:pointer;white-space:nowrap}
+.search button[type=submit]:hover{background:#000}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 8px);background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(35,32,29,.14);
+border:1px solid #ece8e3;list-style:none;margin:0;padding:6px;z-index:6;max-height:380px;overflow-y:auto}
+.sugg li{display:grid;grid-template-columns:76px 1fr auto;gap:12px;align-items:center;padding:9px 12px;border-radius:10px;cursor:pointer;font-size:14px}
+.sugg li b{font-weight:600}.sugg li span{color:var(--muted2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sugg li small{color:var(--muted);font-size:12px}
+.sugg li[aria-selected=true],.sugg li:hover{background:#f4f2ef}
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px;font-size:14px;color:var(--muted)}
+.chips button{border:1px solid var(--line);background:rgba(255,255,255,.75);border-radius:999px;padding:5px 12px;cursor:pointer;font-weight:500;font-size:13px}
+.chips button:hover{background:#fff;border-color:#d9d3cc}
+.hero.compact .chips{display:none}
+.card{background:#fff;border-radius:20px;margin-top:24px;overflow:hidden}
+.card .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:16px 24px;border-bottom:1px solid var(--line)}
+.card h2{font-size:22px;font-weight:500;line-height:1.2;margin:0;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:16px;margin:2px 0 0}
+.right{text-align:right}.right .sub{font-size:14px;color:var(--muted2);margin-top:6px;white-space:nowrap}
+.bd{padding:20px 24px}
+.ft{padding:14px 24px 18px;border-top:1px solid var(--line);font-size:13px;color:#5d5d6a}
+.badge{display:inline-block;border-radius:8px;padding:4px 8px;font-size:16px;font-weight:500;white-space:nowrap}
+.badge.green{background:#e6f4ea;color:#10b981}.badge.red{background:#fdeceb;color:#e5484d}
+.badge.amber{background:#fdf3e1;color:#c27c0e}.badge.grey{background:#f1efec;color:var(--muted2)}
+.company{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap;margin-top:8px}
+.company h2{font-size:clamp(30px,4.6vw,48px);font-weight:500;letter-spacing:-.03em;line-height:1.05;margin:0}
+.company .meta{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--muted2);font-size:15px;margin-top:8px}
+.company .meta b{font-weight:600;color:var(--ink)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:11px;padding:8px 14px;font-size:14px;font-weight:500;cursor:pointer;text-decoration:none}
+.btn:hover{border-color:#d4cdc5}
+.score{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.score .num{font-size:clamp(64px,10vw,112px);font-weight:500;letter-spacing:-.045em;line-height:1}
+.score .of{font-size:28px;color:var(--muted);font-weight:400;letter-spacing:-.02em}
+.score .grade{font-size:28px;font-weight:500;padding:6px 14px;border-radius:12px}
+.verdict{font-size:20px;font-weight:500;margin:18px 0 4px;letter-spacing:-.015em}
+.why{font-size:17px;color:var(--muted2);max-width:820px;margin:0}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}
+.kpi{padding:16px 24px;border-right:1px solid var(--line)}.kpi:last-child{border-right:0}
+.kpi .l{font-size:13px;color:var(--muted)}.kpi .v{font-size:26px;font-weight:500;letter-spacing:-.03em;margin-top:2px}
+.kpi .s{font-size:13px;color:var(--muted2)}
+.pbar{display:grid;grid-template-columns:150px 1fr 44px;align-items:center;gap:14px;padding:7px 0;font-size:15px}
+.pbar .track{height:10px;border-radius:6px;background:#f1efec;overflow:hidden}
+.pbar .fill{height:100%;border-radius:6px;transition:width .8s cubic-bezier(.2,.7,.2,1)}
+.fill.green{background:#34d399}.fill.amber{background:#f5b53f}.fill.red{background:#f07470}.fill.grey{background:#d6d1cb}
+.pbar .w{color:var(--muted);font-size:13px;margin-left:6px}.pbar b{font-weight:500;text-align:right}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:16px}.grid .card{margin-top:0}
+.section{font-size:13px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:56px 0 0}
+.m{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.m:last-child{border-bottom:0}.m .lab{color:var(--muted2)}.m .val{font-weight:500;white-space:nowrap;text-align:right}
+.m .lab small{display:block;font-size:12px;color:var(--muted);margin-top:1px}
+.m .pts{color:var(--muted);font-size:12px;display:block;text-align:right;font-weight:400}
+.empty{color:var(--muted);font-size:14px;padding:10px 0}
+.chartbox{position:relative}
+.pchart{touch-action:pan-y;cursor:crosshair;display:block}
+.pchart .pulse{transform-box:fill-box;transform-origin:center;opacity:.45;animation:pulse 2.4s ease-out infinite}
+@keyframes pulse{0%{transform:scale(1);opacity:.45}80%,100%{transform:scale(3.2);opacity:0}}
+.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid #e6e3df;border-radius:10px;box-shadow:0 6px 20px rgba(35,32,29,.08);
+padding:8px 12px;font-size:14px;line-height:1.5;white-space:nowrap;z-index:3}
+.tip b{display:block;font-weight:600}.tip span{color:var(--blue)}
+.tick{font-size:12px;fill:#9a9088}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:right;font-weight:500;color:var(--muted);font-size:12px;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{text-align:right;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}tr:last-child td{border-bottom:0}
+td.neg{color:#e5484d}
+.scroll{overflow-x:auto}
+.notes li{margin:4px 0}
+.notes{margin:0;padding-left:18px;color:var(--muted2);font-size:14px}
+details summary{cursor:pointer;color:var(--muted2);font-size:14px}
+.tags{font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.7;word-break:break-word}
+.loading{display:flex;align-items:center;gap:16px;padding:28px 24px;font-size:16px;color:var(--muted2)}
+.spin{width:22px;height:22px;border-radius:50%;border:2.5px solid #e6e1db;border-top-color:var(--ink);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error{padding:24px;font-size:16px}.error b{display:block;font-size:20px;font-weight:500;margin-bottom:6px;letter-spacing:-.015em}
+.banner{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 24px;font-size:15px}
+.skeleton{height:14px;border-radius:7px;background:linear-gradient(90deg,#f1efec,#f8f6f4,#f1efec);background-size:200% 100%;animation:sh 1.4s infinite}
+@keyframes sh{to{background-position:-200% 0}}
+footer{margin-top:64px;font-size:13px;color:#5d5d6a;line-height:1.6;max-width:900px}
+footer b{color:var(--ink);font-weight:500}
+.credit{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 28px;margin:32px 0 0;font-size:14px;color:var(--ink);padding:14px 0;
+border-top:1px solid #e3dfda;border-bottom:1px solid #e3dfda}
+.credit a{font-weight:500;text-decoration:none;border-bottom:1px solid #cfc8c0}.credit a:hover{border-color:var(--ink)}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:12px;padding:10px 16px;font-size:14px;z-index:9}
+@media (max-width:900px){.grid{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.kpi:nth-child(2){border-right:0}
+.kpi:nth-child(-n+2){border-bottom:1px solid var(--line)}.by{display:none}}
+@media (max-width:520px){.brand small{font-size:11px}.brand{font-size:17px}.bar .in{grid-template-columns:1fr auto 1fr;gap:8px;padding:10px 14px}
+.pbar{grid-template-columns:110px 1fr 34px;gap:10px;font-size:14px}.pbar .w{display:none}.hero{padding-top:44px}
+.search input{font-size:18px}.search button[type=submit]{padding:11px 14px}.search .box{padding-left:16px}
+.sugg li{grid-template-columns:64px 1fr}.sugg li small{display:none}
+.bd,.card .hd,.kpi,.ft,.banner{padding-left:18px;padding-right:18px}.wrap{padding:0 14px 80px}
+.card .hd{flex-wrap:nowrap;gap:12px}.card .hd>div:first-child{flex:1 1 auto;min-width:0}.card .hd>.right{flex:0 0 auto}}
+@media (prefers-reduced-motion:reduce){.pchart .pulse,.spin,.skeleton{animation:none}}
+</style></head><body>
+<div class="bar"><div class="in">
+<a class="brand" href="/">Stock Scorecard<small>Independent and not investment advice</small></a>
+<a class="by" href="https://thisisfed.xyz" target="_blank" rel="noopener">by Federico R. T. Ferrari</a>
+</div></div>
+<div class="wrap">
+<section class="hero" id="hero">
+<h1>Any stock,<br>scored.</h1>
+<p class="lede">Type a ticker. The score is built on the spot from the company's latest SEC filings and its share price: growth, profitability, balance sheet, dilution, valuation and momentum.</p>
+<form class="search" id="search" role="search" autocomplete="off">
+<div class="box"><input id="q" name="t" type="text" inputmode="search" autocapitalize="characters" spellcheck="false"
+placeholder="Ticker or company, e.g. AAPL" aria-label="Ticker or company name" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false">
+<button type="submit">Score it</button></div>
+<ul id="sugg" class="sugg" role="listbox" hidden></ul>
+</form>
+<div class="chips"><span>Try</span><button type="button" data-t="AAPL">AAPL</button><button type="button" data-t="NVDA">NVDA</button>
+<button type="button" data-t="KO">KO</button><button type="button" data-t="JPM">JPM</button><button type="button" data-t="TSLA">TSLA</button>
+<button type="button" data-t="OPEN">OPEN</button></div>
+</section>
+<main id="out" aria-live="polite"></main>
+<footer id="method">
+<p><b>Method.</b> Each measure scores 0–10 on a straight line between a "0 points" and a "10 points" value (hover a measure to see them), adjusted for the
+company's industry, taken from its SEC industry code: a 20% gross margin is poor for a software company and normal for a retailer. Pillars average their
+measures and are weighted: growth 20%, profitability 25%, balance sheet 15%, dilution 10%, valuation 20%, momentum 10%. Banks and insurers are scored on
+measures that suit them (return on equity, capital, price to book). Grades: A 8+, B 6.5+, C 5+, D 3.5+, F below. The colour at the top of the page follows the score.
+The thresholds and weights are judgement calls and have not been back-tested against share-price returns.</p>
+<p><b>Sources.</b> The company's financial statements and industry code from SEC EDGAR, read when you ask; the share price from Yahoo Finance, Nasdaq or Stooq,
+whichever answers first. Scores are kept for up to an hour, so repeat visits are instant.</p>
+<p><b>Independent project</b>, not affiliated with or endorsed by any company it scores. A structured summary of public numbers, not a forecast, a recommendation
+or investment advice. See also the in-depth <a href="https://thisisfed.github.io/opendoor-scorecard/">Opendoor Scorecard</a>.</p>
+</footer>
+<p class="credit"><span>An idea by Federico R. T. Ferrari (<a href="https://thisisfed.xyz" target="_blank" rel="noopener">thisisfed.xyz</a>)</span></p>
+</div>
+<script>
+(function () {
+  "use strict";
+  var $ = function (s, el) { return (el || document).querySelector(s); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]; }); };
+  var out = $("#out"), hero = $("#hero"), form = $("#search"), q = $("#q"), list = $("#sugg");
+  var BASE_TITLE = document.title;
+
+  // ---------------------------------------------------------------- formatting
+  function money(v, cur) {
+    if (v == null) return "n/a";
+    var a = Math.abs(v), s = v < 0 ? "-" : "", p = cur && cur !== "USD" ? cur + " " : "$";
+    if (a >= 1e12) return s + p + (a / 1e12).toFixed(2) + "tn";
+    if (a >= 1e9) return s + p + (a / 1e9).toFixed(a >= 1e11 ? 0 : a >= 1e10 ? 1 : 2) + "bn";
+    if (a >= 1e6) return s + p + (a / 1e6).toFixed(a >= 1e8 ? 0 : 1) + "M";
+    return s + p + Math.round(a).toLocaleString("en-US");
+  }
+  function pct(v, d) { return v == null ? "–" : (v * 100).toFixed(d == null ? 1 : d) + "%"; }
+  function date(iso) {
+    if (!iso) return "";
+    var d = new Date(iso.slice(0, 10) + "T12:00:00Z");
+    return d.toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric", timeZone: "UTC"});
+  }
+  function tone(s) { return s == null ? "grey" : s >= 6.5 ? "green" : s >= 4 ? "amber" : "red"; }
+  function num(s) { return s == null ? "n/a" : s.toFixed(1); }
+
+  // background glow follows the score: red, amber at a C, green from a B up
+  var HUES = [[0, 0], [3.5, 12], [5, 34], [6.5, 72], [8, 128], [10, 148]];
+  function glow(score) {
+    var root = document.documentElement.style;
+    if (score == null) { ["--g1", "--g2", "--g3"].forEach(function (k) { root.removeProperty(k); }); return; }
+    var v = Math.max(0, Math.min(10, score)), h = 0;
+    for (var i = 1; i < HUES.length; i++) {
+      if (v <= HUES[i][0]) { var a = HUES[i - 1], b = HUES[i]; h = a[1] + (b[1] - a[1]) * (v - a[0]) / (b[0] - a[0]); break; }
+    }
+    root.setProperty("--g1", "hsla(" + Math.round((h - 8 + 360) % 360) + ",95%,79%,.55)");
+    root.setProperty("--g2", "hsla(" + Math.round((h + 10) % 360) + ",90%,80%,.5)");
+    root.setProperty("--g3", "hsla(" + Math.round((h - 12 + 360) % 360) + ",90%,82%,.42)");
+  }
+
+  // ---------------------------------------------------------------- suggestions
+  var TICKERS = null, loadingTickers = null, sel = -1, shown = [];
+  function loadTickers() {
+    if (TICKERS || loadingTickers) return loadingTickers;
+    loadingTickers = fetch("/api/tickers").then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (rows) { TICKERS = rows; return rows; }).catch(function () { TICKERS = []; return []; });
+    return loadingTickers;
+  }
+  function suggest() {
+    var term = q.value.trim().toUpperCase();
+    if (!term || !TICKERS) { hide(); return; }
+    var t1 = [], t2 = [], t3 = [];
+    for (var i = 0; i < TICKERS.length && t1.length + t2.length + t3.length < 400; i++) {
+      var r = TICKERS[i], tk = r[0], nm = r[1].toUpperCase();
+      if (tk === term || tk === term.replace(".", "-")) t1.unshift(r);
+      else if (tk.indexOf(term) === 0) t1.push(r);
+      else if (nm.indexOf(term) === 0) t2.push(r);
+      else if (term.length > 2 && nm.indexOf(term) > 0) t3.push(r);
+    }
+    shown = t1.concat(t2, t3).slice(0, 8);
+    if (!shown.length) { hide(); return; }
+    sel = -1;
+    list.innerHTML = shown.map(function (r, i) {
+      return '<li role="option" id="s' + i + '" data-i="' + i + '"><b>' + esc(r[0]) + "</b><span>" + esc(r[1]) + "</span><small>" + esc(r[2]) + "</small></li>";
+    }).join("");
+    list.hidden = false; q.setAttribute("aria-expanded", "true");
+  }
+  function hide() { list.hidden = true; q.setAttribute("aria-expanded", "false"); sel = -1; q.removeAttribute("aria-activedescendant"); }
+  function mark() {
+    [].forEach.call(list.children, function (li, i) { li.setAttribute("aria-selected", i === sel ? "true" : "false"); });
+    if (sel >= 0) { q.setAttribute("aria-activedescendant", "s" + sel); list.children[sel].scrollIntoView({block: "nearest"}); }
+  }
+  q.addEventListener("focus", function () { loadTickers(); });
+  q.addEventListener("input", function () { (TICKERS ? Promise.resolve() : loadTickers()).then(suggest); });
+  q.addEventListener("keydown", function (e) {
+    if (list.hidden) return;
+    if (e.key === "ArrowDown") { sel = Math.min(shown.length - 1, sel + 1); mark(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { sel = Math.max(-1, sel - 1); mark(); e.preventDefault(); }
+    else if (e.key === "Escape") { hide(); }
+    else if (e.key === "Enter" && sel >= 0) { e.preventDefault(); go(shown[sel][0]); }
+  });
+  list.addEventListener("mousedown", function (e) {
+    var li = e.target.closest("li"); if (li) { e.preventDefault(); go(shown[+li.getAttribute("data-i")][0]); }
+  });
+  document.addEventListener("click", function (e) { if (!form.contains(e.target)) hide(); });
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var v = q.value.trim();
+    if (!v) { q.focus(); return; }
+    if (TICKERS && !/^[A-Za-z0-9.\-]{1,6}$/.test(v) && shown.length) v = shown[0][0];  // a company name: take the best match
+    go(v);
+  });
+  document.querySelectorAll(".chips button").forEach(function (b) { b.addEventListener("click", function () { go(b.getAttribute("data-t")); }); });
+
+  // ---------------------------------------------------------------- routing
+  function norm(t) { return String(t || "").trim().toUpperCase().replace(/[./]/g, "-").replace(/[^A-Z0-9-]/g, "").slice(0, 12); }
+  function go(t) {
+    t = norm(t); if (!t) return;
+    hide(); q.value = t; q.blur();
+    if (location.pathname.slice(1).toUpperCase() !== t) history.pushState({t: t}, "", "/" + t);
+    load(t);
+  }
+  function fromUrl() {
+    var p = location.pathname.replace(/^\/+|\/+$/g, ""), s = new URLSearchParams(location.search).get("t");
+    return norm(s || (p && p !== "index.html" ? p : ""));
+  }
+  window.addEventListener("popstate", function () { var t = fromUrl(); if (t) { q.value = t; load(t); } else home(); });
+  function home() { out.innerHTML = ""; hero.classList.remove("compact"); glow(null); document.title = BASE_TITLE; }
+
+  // ---------------------------------------------------------------- loading and errors
+  var steps = ["Finding the company", "Reading its SEC filings", "Fetching the share price", "Working out the score"], timer = null, seq = 0;
+  function loading(t) {
+    hero.classList.add("compact");
+    var i = 0;
+    out.innerHTML = '<div class="card"><div class="loading"><span class="spin"></span><span id="step">' + esc(steps[0]) + " for " + esc(t) + "…</span></div>" +
+      '<div class="bd" style="padding-top:0"><div class="skeleton" style="width:60%"></div><div class="skeleton" style="width:40%;margin-top:12px"></div></div></div>';
+    clearInterval(timer);
+    timer = setInterval(function () { i = Math.min(steps.length - 1, i + 1); var s = $("#step"); if (s) s.textContent = steps[i] + "…"; }, 1400);
+  }
+  function fail(t, msg) {
+    clearInterval(timer);
+    glow(null);
+    out.innerHTML = '<div class="card"><div class="error"><b>Couldn’t score ' + esc(t) + "</b>" + esc(msg) + "</div></div>";
+  }
+  function load(t) {
+    var my = ++seq;
+    loading(t);
+    window.scrollTo({top: 0});
+    fetch("/api/score?t=" + encodeURIComponent(t)).then(function (r) {
+      return r.json().catch(function () { return {error: "The server sent an unexpected answer. Try again in a minute."}; });
+    }).then(function (j) {
+      if (my !== seq) return;
+      clearInterval(timer);
+      if (j.error) { fail(t, j.error); return; }
+      render(j);
+    }).catch(function () { if (my === seq) fail(t, "Couldn’t reach the server. Check your connection and try again."); });
+  }
+
+  // ---------------------------------------------------------------- the result
+  function render(r) {
+    var s = r.score, px = r.price, f = r.facts, cur = r.currency;
+    document.title = r.ticker + " scores " + s.overall.toFixed(2) + "/10 (" + s.grade + ") | Stock Scorecard";
+    glow(s.overall);
+    var kpis = [
+      ["Share price", px ? (px.currency && px.currency !== "USD" ? px.currency + " " : "$") + px.price.toFixed(2) : "n/a", px ? "close " + date(px.date) : "unavailable just now"],
+      ["Market cap", money(f.market_cap, cur), f.ev != null ? "enterprise value " + money(f.ev, cur) : ""],
+      ["Revenue", money(f.revenue_ttm, cur), "last 12 months"],
+      ["Free cash flow", money(f.fcf_ttm, cur), "last 12 months"]
+    ];
+    var h = "";
+    if (r.ticker === "OPEN") h += '<div class="card"><div class="banner"><span>There’s an in-depth Opendoor scorecard, with Opendoor’s own tracker, debt split and dilution line by line.</span>' +
+      '<a class="btn" href="https://thisisfed.github.io/opendoor-scorecard/">Open it</a></div></div>';
+    h += '<div class="company"><div><h2>' + esc(r.name) + '</h2><div class="meta"><span><b>' + esc(r.ticker) + "</b> on " + esc(r.exchange || "US markets") + "</span><span>" +
+      esc(r.sector.label) + "</span><span>Filings to " + esc(date(f.period_end)) + "</span></div></div>" +
+      '<div class="actions"><button class="btn" type="button" id="share">Copy link</button><a class="btn" href="' + esc(r.links.filings) + '" target="_blank" rel="noopener">SEC filings</a></div></div>';
+    h += '<div class="card" id="score"><div class="hd"><div><h2>Overall score</h2><p class="sub">Weighted across ' + s.pillars.length + " pillars</p></div>" +
+      '<div class="right"><span class="badge grey">Live</span><p class="sub">scored ' + esc(timeAgo(r.generated)) + "</p></div></div>" +
+      '<div class="bd"><div class="score"><span class="num">' + s.overall.toFixed(2) + '</span><span class="of">/ 10</span><span class="grade badge ' + tone(s.overall) + '">' +
+      esc(s.grade) + '</span></div><p class="verdict">' + esc(s.verdict) + '</p><p class="why">' + esc(s.reason) + "</p></div>" +
+      '<div class="kpis">' + kpis.map(function (k) { return '<div class="kpi"><div class="l">' + esc(k[0]) + '</div><div class="v">' + esc(k[1]) + '</div><div class="s">' + esc(k[2]) + "</div></div>"; }).join("") + "</div></div>";
+    h += '<div class="card"><div class="hd"><div><h2>Score by pillar</h2><p class="sub">Each pillar is the average of its measures, 0–10</p></div></div><div class="bd">' +
+      s.pillars.map(function (p) {
+        return '<div class="pbar"><span>' + esc(p.name) + '<span class="w">' + p.weight + '%</span></span><div class="track"><div class="fill ' + tone(p.score) +
+          '" style="width:0" data-w="' + ((p.score || 0) * 10) + '%"></div></div><b>' + num(p.score) + "</b></div>";
+      }).join("") + "</div></div>";
+    if (r.warnings && r.warnings.length) h += '<div class="card"><div class="hd"><div><h2>Good to know</h2><p class="sub">About the data behind this score</p></div></div><div class="bd"><ul class="notes">' +
+      r.warnings.map(function (w) { return "<li>" + esc(w) + "</li>"; }).join("") + "</ul></div></div>";
+    h += '<p class="section">What drives each score</p><div class="grid">' + s.pillars.map(function (p) {
+      var rows = p.metrics.length ? p.metrics.map(function (i) {
+        return '<div class="m" title="' + esc(i.rule) + '"><span class="lab">' + esc(i.label) + (i.note ? "<small>" + esc(i.note) + "</small>" : "") +
+          '</span><span class="val">' + esc(i.text) + '<span class="pts">' + (i.score == null ? "–" : i.score.toFixed(1) + " pts") + "</span></span></div>";
+      }).join("") : '<p class="empty">No data for this pillar.</p>';
+      return '<div class="card"><div class="hd"><div><h2>' + esc(p.name) + '</h2><p class="sub">' + esc(p.question) + '</p></div><div class="right">' +
+        '<span class="badge ' + tone(p.score) + '">' + num(p.score) + '</span><p class="sub">' + p.weight + '% weight</p></div></div><div class="bd" style="padding-top:6px;padding-bottom:6px">' + rows + "</div></div>";
+    }).join("") + "</div>";
+    if (r.history && r.history.length > 20) {
+      var first = r.history[0][1], last = r.history[r.history.length - 1][1], ch = last / first - 1;
+      h += '<p class="section">Share price</p><div class="card"><div class="hd"><div><h2>Last 12 months</h2><p class="sub">Daily close, ' + esc(px.source) +
+        '</p></div><div class="right"><span class="badge ' + (ch >= 0 ? "green" : "red") + '">' + (ch >= 0 ? "↗ +" : "↘ ") + (ch * 100).toFixed(1) +
+        '%</span><p class="sub">since ' + esc(date(r.history[0][0])) + '</p></div></div><div class="bd"><div class="chartbox">' + chart(r.history) + '<div class="tip" hidden></div></div></div></div>';
+    }
+    if (r.quarters && r.quarters.length) {
+      var neg = function (v, txt) { return '<td class="' + (v != null && v < 0 ? "neg" : "") + '">' + txt + "</td>"; };
+      h += '<p class="section">Quarterly results</p><div class="card"><div class="hd"><div><h2>Last ' + r.quarters.length + ' quarters</h2><p class="sub">From the company’s 10-Q and 10-K filings' +
+        (cur !== "USD" ? ", in " + esc(cur) : "") + '</p></div></div><div class="bd scroll" style="padding-top:4px"><table><tr><th>Quarter ended</th><th>Revenue</th><th>Gross margin</th>' +
+        "<th>Operating margin</th><th>Net income</th><th>Free cash flow</th></tr>" + r.quarters.map(function (x) {
+          return "<tr><td>" + esc(date(x.end)) + "</td><td>" + money(x.revenue, cur) + "</td>" + neg(x.gross_margin, pct(x.gross_margin)) + neg(x.op_margin, pct(x.op_margin)) +
+            neg(x.net_income, money(x.net_income, cur)) + neg(x.fcf, money(x.fcf, cur)) + "</tr>";
+        }).join("") + "</table></div></div>";
+    }
+    var tagText = Object.keys(r.tags || {}).map(function (k) { return k.replace(/_/g, " ") + ": " + r.tags[k].join(" + "); }).join("; ");
+    h += '<div class="card"><div class="hd"><div><h2>Where the numbers come from</h2><p class="sub">So you can check them</p></div></div><div class="bd" style="font-size:14px;color:var(--muted2)">' +
+      "<p style=\"margin-top:0\">Financial statements to " + esc(date(f.period_end)) + ", balance sheet at " + esc(date(f.balance_sheet_date)) + ", from SEC EDGAR (company " + esc(r.cik) + "). " +
+      "Industry: " + esc(r.sector.sic_label || "not given") + " (SIC " + esc(r.sector.sic || "–") + "), scored against " + esc(r.sector.label.toLowerCase()) + " norms. " +
+      "Shares: " + esc(f.shares ? (f.shares / 1e6).toFixed(1) + "M" : "n/a") + ", " + esc(f.shares_source) + ". " +
+      (px ? "Price: " + esc(px.source) + ", close on " + esc(date(px.date)) + ". " : "") + "</p>" +
+      "<details><summary>Which reported items were used</summary><p class=\"tags\">" + esc(tagText) + "</p></details></div></div>";
+    out.innerHTML = h;
+    requestAnimationFrame(function () { out.querySelectorAll(".fill[data-w]").forEach(function (el) { el.style.width = el.getAttribute("data-w"); }); });
+    $("#share").addEventListener("click", function () {
+      var url = location.origin + "/" + r.ticker;
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { toast("Link copied"); }, function () { toast(url); });
+    });
+    hookChart();
+  }
+  function timeAgo(iso) {
+    var m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    return m < 1 ? "just now" : m === 1 ? "a minute ago" : m < 60 ? m + " minutes ago" : "within the hour";
+  }
+  function toast(msg) {
+    var t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 1800);
+  }
+
+  // ---------------------------------------------------------------- price chart
+  var CH = null;
+  function chart(hist) {
+    var W = 1000, H = 260, L = 50, R = 16, T = 16, B = 30, n = hist.length;
+    var vals = hist.map(function (p) { return p[1]; }), lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    var pad = (hi - lo) * 0.08 || hi * 0.05; lo = Math.max(0, lo - pad); hi = hi + pad;
+    var x = function (i) { return L + i * (W - L - R) / (n - 1); }, y = function (v) { return T + (1 - (v - lo) / (hi - lo)) * (H - T - B); };
+    var pts = hist.map(function (p, i) { return [x(i), y(p[1])]; });
+    var line = "M" + pts.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" L");
+    var g = "";
+    for (var k = 0; k <= 4; k++) {
+      var v = lo + (hi - lo) * k / 4;
+      g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="#ebe7e2" stroke-dasharray="' + (k ? "2 4" : "0") + '"/>' +
+        '<text x="' + (L - 10) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end" class="tick">' + (v >= 100 ? v.toFixed(0) : v.toFixed(2)) + "</text>";
+    }
+    var months = 0, lastM = hist[0][0].slice(0, 7);
+    hist.forEach(function (p, i) {
+      var mth = p[0].slice(0, 7);
+      if (mth === lastM) return;
+      lastM = mth; months++;
+      if (months % 2 === 1 && i < n - 8) g += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" class="tick">' +
+        new Date(p[0] + "T12:00:00Z").toLocaleDateString("en-US", {month: "short", timeZone: "UTC"}) + "</text>";
+    });
+    var lx = pts[n - 1][0], ly = pts[n - 1][1];
+    CH = {hist: hist, pts: pts, W: W, L: L, R: R};
+    return '<svg class="pchart" viewBox="0 0 ' + W + " " + H + '" width="100%" role="img" aria-label="Share price over the last 12 months">' +
+      '<defs><linearGradient id="pf" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#1d4ed8" stop-opacity=".14"/><stop offset="1" stop-color="#1d4ed8" stop-opacity="0"/></linearGradient></defs>' + g +
+      '<path d="' + line + " L" + lx.toFixed(1) + "," + (H - B) + " L" + L + "," + (H - B) + ' Z" fill="url(#pf)"/>' +
+      '<path d="' + line + '" fill="none" stroke="#1d4ed8" stroke-width="2.2" stroke-linejoin="round"/>' +
+      '<circle class="pulse" cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" r="7" fill="#1d4ed8"/>' +
+      '<circle cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" r="4.5" fill="#1d4ed8" stroke="#fff" stroke-width="2"/>' +
+      '<line class="vline" x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" stroke="#cfd3dc" stroke-width="1.2" style="display:none"/>' +
+      '<circle class="hdot" r="5" fill="#1d4ed8" stroke="#fff" stroke-width="2" style="display:none"/>' +
+      '<rect x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '" fill="transparent"/></svg>';
+  }
+  function hookChart() {
+    var svg = $(".pchart"), box = svg && svg.parentNode, tip = box && $(".tip", box);
+    if (!svg || !CH) return;
+    var v = $(".vline", svg), d = $(".hdot", svg);
+    function show(e) {
+      var r = svg.getBoundingClientRect(), k = r.width / CH.W, i = Math.round(((e.clientX - r.left) / k - CH.L) / ((CH.W - CH.L - CH.R) / (CH.pts.length - 1)));
+      i = Math.max(0, Math.min(CH.pts.length - 1, i));
+      var p = CH.pts[i], hp = CH.hist[i];
+      v.setAttribute("x1", p[0]); v.setAttribute("x2", p[0]); v.style.display = "";
+      d.setAttribute("cx", p[0]); d.setAttribute("cy", p[1]); d.style.display = "";
+      tip.innerHTML = "<b>" + esc(date(hp[0])) + "</b><span>" + hp[1].toFixed(2) + "</span>";
+      tip.hidden = false;
+      var left = p[0] * k + 14; if (left + tip.offsetWidth > box.clientWidth - 4) left = p[0] * k - tip.offsetWidth - 14;
+      tip.style.left = Math.max(4, left) + "px"; tip.style.top = Math.max(0, p[1] * k - tip.offsetHeight - 12) + "px";
+    }
+    function hide() { tip.hidden = true; v.style.display = "none"; d.style.display = "none"; }
+    svg.addEventListener("pointermove", show); svg.addEventListener("pointerdown", show);
+    svg.addEventListener("pointerleave", function (e) { if (e.pointerType === "mouse") hide(); });
+  }
+
+  // ---------------------------------------------------------------- start
+  var t0 = fromUrl();
+  if (t0) { q.value = t0; history.replaceState({t: t0}, "", "/" + t0); load(t0); }
+  else if (window.requestIdleCallback) requestIdleCallback(loadTickers); else setTimeout(loadTickers, 1500);
+})();
+</script>
+</body></html>

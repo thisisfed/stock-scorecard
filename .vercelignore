@@ -2,4 +2,4 @@ tests/
 tools/
 .github/
 out/
-*.md
+README.md
