@@ -3,3 +3,4 @@ tools/
 .github/
 out/
 README.md
+node_modules/

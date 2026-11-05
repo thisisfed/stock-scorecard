@@ -1,10 +1,13 @@
 {
   "functions": {
     "api/score.py": { "maxDuration": 60 },
-    "api/tickers.py": { "maxDuration": 30 }
+    "api/tickers.py": { "maxDuration": 30 },
+    "api/rules.py": { "maxDuration": 10 },
+    "api/page.py": { "maxDuration": 10, "includeFiles": "index.html" }
   },
   "rewrites": [
-    { "source": "/:ticker([A-Za-z0-9-]{1,12})", "destination": "/index.html" }
+    { "source": "/:a([A-Za-z0-9-]{1,12})/vs/:b([A-Za-z0-9-]{1,12})", "destination": "/api/page?t=:a&vs=:b" },
+    { "source": "/:ticker([A-Za-z0-9-]{1,12})", "destination": "/api/page?t=:ticker" }
   ],
   "headers": [
     {

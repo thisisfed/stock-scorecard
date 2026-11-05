@@ -3,7 +3,7 @@ name: Check scores on real companies
 on:
   push:
     branches: [main]
-    paths: ["api/**", "tools/**", "tests/**"]
+    paths: ["api/**", "tools/**", "tests/**", "index.html"]
   workflow_dispatch:
     inputs:
       tickers:
@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Unit tests
-        run: python3 tests/test_engine.py
+        run: python3 tests/test_engine.py && python3 tests/test_page.py
       - name: Test the live site
         if: ${{ github.event.inputs.site }}
         run: python3 tools/smoke.py "${{ github.event.inputs.site }}"

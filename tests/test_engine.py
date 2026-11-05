@@ -116,6 +116,8 @@ assert abs(m["share_yoy"]["value"] - (98 / 100 - 1)) < 1e-9 and abs(m["dilution_
 assert "dilution_all" not in m                                    # profitable: only in-the-money dilution
 assert m["runway_q"]["text"] == "self-funding" and m["range_pos"]["text"] == "66.7%"
 assert m["gross_margin"]["rule"] == "0 points at 50.0%, 10 points at 82.0%"   # software norms
+assert r["score"]["summary"] and r["score"]["summary"][0].isupper() and not r["score"]["summary"].endswith(".")
+print(f"summary: {r['score']['summary']}")
 print(f"score: {r['score']['overall']} {r['score']['grade']} - {r['score']['reason']}")
 for p in r["score"]["pillars"]:
     print(f"   {p['name']:<14}{p['score']}")

@@ -1,0 +1,9 @@
+{
+  "name": "stock-scorecard",
+  "private": true,
+  "type": "module",
+  "description": "Share images for Stock Scorecard (api/og.js). The rest of the site is static HTML and Python.",
+  "dependencies": {
+    "@vercel/og": "^0.6.8"
+  }
+}
