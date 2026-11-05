@@ -3,7 +3,8 @@
     "api/score.py": { "maxDuration": 60 },
     "api/tickers.py": { "maxDuration": 30 },
     "api/rules.py": { "maxDuration": 10 },
-    "api/page.py": { "maxDuration": 10, "includeFiles": "index.html" }
+    "api/page.py": { "maxDuration": 10, "includeFiles": "index.html" },
+    "api/og.js": { "maxDuration": 30, "memory": 1024, "includeFiles": "api/_og/**" }
   },
   "rewrites": [
     { "source": "/:a([A-Za-z0-9-]{1,12})/vs/:b([A-Za-z0-9-]{1,12})", "destination": "/api/page?t=:a&vs=:b" },

@@ -1,8 +1,8 @@
 // GET /api/og?t=AAPL (or ?t=AAPL&vs=MSFT) -> a 1200x630 PNG for link previews: ticker, score, grade, top pillars.
-// Runs on Vercel's free Edge runtime. It reads the score from this site's own /api/score, so the two always agree.
+// A Node.js function on Vercel's free plan, written with the web-standard GET(request) signature. It reads the score
+// from this site's own /api/score, so the image and the page always agree.
+import { readFile } from "node:fs/promises";
 import { ImageResponse } from "@vercel/og";
-
-export const config = { runtime: "edge" };
 
 const W = 1200, H = 630;
 const INK = "#23201d", MUTED = "#786e64", LINE = "#ebe7e2";
@@ -122,7 +122,7 @@ function message(t, msg, host) {
 }
 
 async function getScore(origin, t) {
-  const r = await fetch(`${origin}/api/score?t=${encodeURIComponent(t)}`, { headers: { accept: "application/json" } });
+  const r = await fetch(`${origin}/api/score?t=${encodeURIComponent(t)}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) });
   const j = await r.json();
   if (!r.ok || j.error || !j.score) throw new Error(j.error || "no score");
   return j;
@@ -131,14 +131,14 @@ async function getScore(origin, t) {
 let FONTS = null;
 async function fonts() {
   if (!FONTS) {
-    const load = (f) => fetch(new URL(`./_og/${f}`, import.meta.url)).then((r) => r.arrayBuffer());
+    const load = (f) => readFile(new URL(`./_og/${f}`, import.meta.url));
     const [regular, semibold] = await Promise.all([load("inter-latin-400-normal.woff"), load("inter-latin-600-normal.woff")]);
     FONTS = [{ name: "Inter", data: regular, weight: 400, style: "normal" }, { name: "Inter", data: semibold, weight: 600, style: "normal" }];
   }
   return FONTS;
 }
 
-export default async function handler(req) {
+export async function GET(req) {
   const url = new URL(req.url), t = norm(url.searchParams.get("t")), vs = norm(url.searchParams.get("vs")), host = url.host;
   let el, ok = true;
   try {
@@ -149,8 +149,8 @@ export default async function handler(req) {
     ok = false;
     el = message(t, "Open the link to see its score.", host);
   }
-  return new ImageResponse(el, {
-    width: W, height: H, fonts: await fonts(),
-    headers: { "Cache-Control": ok ? "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400" : "public, max-age=60, s-maxage=300" },
-  });
+  const img = new ImageResponse(el, { width: W, height: H, fonts: await fonts() });
+  const png = await img.arrayBuffer();  // render now, so a failure is caught here and not mid-response
+  return new Response(png, { headers: { "Content-Type": "image/png",
+    "Cache-Control": ok ? "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400" : "public, max-age=60, s-maxage=300" } });
 }
