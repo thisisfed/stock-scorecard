@@ -51,64 +51,72 @@ function ring(score, size, stroke) {
 
 function scoreBlock(s, size) {
   return h("div", { display: "flex", position: "relative", width: size, height: size, alignItems: "center", justifyContent: "center" },
-    ring(s.overall, size, Math.round(size * 0.075)),
-    col({ alignItems: "center" },
-      text({ fontSize: size * 0.3, fontWeight: 600, letterSpacing: "-0.04em", lineHeight: 1, color: INK }, s.overall.toFixed(1)),
-      text({ fontSize: size * 0.085, color: MUTED, marginTop: 6 }, "out of 10")));
+    ring(s.overall, size, Math.round(size * 0.07)),
+    row({ alignItems: "flex-end" },
+      text({ fontSize: size * 0.28, fontWeight: 600, letterSpacing: "-0.05em", lineHeight: 1, color: INK }, s.overall.toFixed(1)),
+      text({ fontSize: size * 0.085, color: MUTED, fontWeight: 600, marginLeft: 4, marginBottom: size * 0.03 }, "/10")));
 }
 
+const GRADE_BG = { green: "#e6f4ea", amber: "#fdf3e1", red: "#fdeceb", grey: "#f1efec" };
+const GRADE_INK = { green: "#0f8a5f", amber: "#b06f0b", red: "#d93b40", grey: "#5d554d" };
 function grade(s, size) {
   const t = tone(s.overall);
-  return text({ width: size, height: size, borderRadius: size * 0.22, alignItems: "center", justifyContent: "center",
-    fontSize: size * 0.62, fontWeight: 600, color: TONE[t], backgroundColor: t === "green" ? "#e6f4ea" : t === "amber" ? "#fdf3e1" : t === "red" ? "#fdeceb" : "#f1efec" }, s.grade);
+  return text({ width: size, height: size, borderRadius: size * 0.26, alignItems: "center", justifyContent: "center",
+    fontSize: size * 0.64, fontWeight: 600, letterSpacing: "-0.04em", color: GRADE_INK[t], backgroundColor: GRADE_BG[t] }, s.grade);
 }
 
 function bar(p, width) {
   const t = tone(p.score);
-  return col({ width, marginBottom: 18 },
-    row({ justifyContent: "space-between", fontSize: 24, color: INK, marginBottom: 8 },
-      text({}, p.name), text({ fontWeight: 600 }, p.score == null ? "n/a" : p.score.toFixed(1))),
-    row({ width, height: 12, borderRadius: 6, backgroundColor: "#efebe6" },
-      h("div", { width: Math.max(8, width * (p.score || 0) / 10), height: 12, borderRadius: 6, backgroundColor: FILL[t] })));
+  return col({ width, marginBottom: 22 },
+    row({ justifyContent: "space-between", alignItems: "flex-end", fontSize: 22, color: INK, marginBottom: 9 },
+      row({ alignItems: "flex-end" }, text({ fontWeight: 600 }, p.name), text({ fontSize: 17, color: MUTED, marginLeft: 10, marginBottom: 1 }, `${p.weight}%`)),
+      text({ fontWeight: 600 }, p.score == null ? "n/a" : p.score.toFixed(1))),
+    row({ width, height: 10, borderRadius: 5, backgroundColor: "#ece8e3" },
+      h("div", { width: Math.max(10, width * (p.score || 0) / 10), height: 10, borderRadius: 5, backgroundColor: FILL[t] })));
 }
 
-function frame(score, ...children) {
+function frame(score, host, ...children) {
   const hh = score == null ? 230 : hue(score), c1 = (hh + 352) % 360, c2 = (hh + 10) % 360;
-  return col({ width: W, height: H, padding: "56px 64px", backgroundColor: "#f6f5f3", fontFamily: "Inter", color: INK,
+  return col({ width: W, height: H, padding: "52px 64px 40px", backgroundColor: "#f6f5f3", fontFamily: "Inter", color: INK,
     backgroundImage: `radial-gradient(circle 720px at 8% 0%, ${rgba(c1, 95, 79, 0.6)}, ${rgba(c1, 95, 79, 0)}), ` +
       `radial-gradient(circle 640px at 92% 0%, ${rgba(c2, 90, 80, 0.55)}, ${rgba(c2, 90, 80, 0)})` },
     ...children,
-    row({ marginTop: "auto", justifyContent: "space-between", fontSize: 22, color: MUTED, borderTop: `1px solid ${LINE}`, paddingTop: 20 },
-      text({ fontWeight: 600, color: INK }, "Stock Scorecard"), text({}, "Built from SEC filings · not investment advice")));
+    row({ marginTop: "auto", justifyContent: "space-between", alignItems: "center", fontSize: 19, color: MUTED, borderTop: "1px solid rgba(35,32,29,.1)", paddingTop: 18 },
+      row({ alignItems: "center" }, text({ fontWeight: 600, color: INK }, "Stock Scorecard"), text({ marginLeft: 14 }, host || "")),
+      text({}, "Built from SEC filings · Not investment advice")));
 }
 
-function single(r) {
-  const s = r.score;
-  const top = s.pillars.filter((p) => p.score != null).sort((a, b) => b.score * b.weight - a.score * a.weight).slice(0, 3);
-  return frame(s.overall,
-    row({ flex: 1, alignItems: "center", gap: 56 },
+function single(r, host) {
+  const s = r.score, ps = s.pillars;
+  const name = r.name.length > 34 ? r.name.slice(0, 32).trim() + "…" : r.name;
+  return frame(s.overall, host,
+    row({ flex: 1, alignItems: "center", gap: 72 },
       col({ flex: 1 },
-        text({ fontSize: 30, color: MUTED, fontWeight: 600, letterSpacing: "0.02em" }, r.ticker),
-        text({ fontSize: r.name.length > 26 ? 50 : 62, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.05, marginTop: 6 }, r.name),
-        text({ fontSize: 28, color: "#5d554d", marginTop: 18, lineHeight: 1.3 }, s.summary || s.verdict),
-        col({ marginTop: 34 }, top.map((p) => bar(p, 560)))),
-      col({ alignItems: "center", gap: 24 }, scoreBlock(s, 300), grade(s, 96))));
+        row({ alignItems: "center", fontSize: 22, color: MUTED },
+          text({ fontWeight: 600, color: INK, letterSpacing: "0.02em" }, r.ticker), text({ marginLeft: 14 }, r.sector.label)),
+        text({ fontSize: name.length > 24 ? 48 : 58, fontWeight: 600, letterSpacing: "-0.035em", lineHeight: 1.05, marginTop: 10 }, name),
+        row({ marginTop: 44, gap: 44 },
+          col({}, ps.slice(0, 3).map((p) => bar(p, 300))),
+          col({}, ps.slice(3, 6).map((p) => bar(p, 300))))),
+      col({ alignItems: "center", gap: 20 }, scoreBlock(s, 264),
+        row({ alignItems: "center", gap: 14 }, grade(s, 84), col({ fontSize: 18, color: MUTED },
+          text({ fontSize: 15, letterSpacing: "0.08em" }, "GRADE"), text({ color: INK, fontWeight: 600, fontSize: 20 }, s.verdict.split(":")[0]))))));
 }
 
-function compare(a, b) {
+function compare(a, b, host) {
   const side = (r) => col({ flex: 1, alignItems: "center" },
     text({ fontSize: 44, fontWeight: 600, letterSpacing: "-0.02em" }, r.ticker),
     text({ fontSize: 22, color: MUTED, marginTop: 4, marginBottom: 24, maxWidth: 440, textAlign: "center" }, r.name.length > 34 ? r.name.slice(0, 32) + "…" : r.name),
     row({ alignItems: "center", gap: 28 }, scoreBlock(r.score, 240), grade(r.score, 84)));
   const best = a.score.overall >= b.score.overall ? a : b;
-  return frame((a.score.overall + b.score.overall) / 2,
+  return frame((a.score.overall + b.score.overall) / 2, host,
     row({ flex: 1, alignItems: "center" }, side(a), text({ fontSize: 30, color: MUTED, padding: "0 16px" }, "vs"), side(b)),
     text({ fontSize: 26, color: "#5d554d", justifyContent: "center", marginBottom: 22 },
       a.score.overall === b.score.overall ? "Level on the overall score" : `${best.ticker} scores higher overall`));
 }
 
-function message(t, msg) {
-  return frame(null, col({ flex: 1, justifyContent: "center" },
+function message(t, msg, host) {
+  return frame(null, host, col({ flex: 1, justifyContent: "center" },
     text({ fontSize: 72, fontWeight: 600, letterSpacing: "-0.03em" }, t || "Any stock, scored."),
     text({ fontSize: 32, color: "#5d554d", marginTop: 16 }, msg)));
 }
@@ -131,15 +139,15 @@ async function fonts() {
 }
 
 export default async function handler(req) {
-  const url = new URL(req.url), t = norm(url.searchParams.get("t")), vs = norm(url.searchParams.get("vs"));
+  const url = new URL(req.url), t = norm(url.searchParams.get("t")), vs = norm(url.searchParams.get("vs")), host = url.host;
   let el, ok = true;
   try {
-    if (!t) el = message("", "Type a ticker, get an independent 0–10 score.");
-    else if (vs && vs !== t) { const [a, b] = await Promise.all([getScore(url.origin, t), getScore(url.origin, vs)]); el = compare(a, b); }
-    else el = single(await getScore(url.origin, t));
+    if (!t) el = message("", "Type a ticker, get an independent 0–10 score.", host);
+    else if (vs && vs !== t) { const [a, b] = await Promise.all([getScore(url.origin, t), getScore(url.origin, vs)]); el = compare(a, b, host); }
+    else el = single(await getScore(url.origin, t), host);
   } catch (e) {
     ok = false;
-    el = message(t, "Open the link to see its score.");
+    el = message(t, "Open the link to see its score.", host);
   }
   return new ImageResponse(el, {
     width: W, height: H, fonts: await fonts(),
