@@ -156,7 +156,7 @@ The thresholds and weights are judgement calls and have not been back-tested aga
 <p><b>Sources.</b> The company's financial statements and industry code from SEC EDGAR, read when you ask; the share price from Yahoo Finance, Nasdaq or Stooq,
 whichever answers first. Scores are kept for up to an hour, so repeat visits are instant.</p>
 <p><b>Independent project</b>, not affiliated with or endorsed by any company it scores. A structured summary of public numbers, not a forecast, a recommendation
-or investment advice. See also the in-depth <a href="https://thisisfed.github.io/opendoor-scorecard/">Opendoor Scorecard</a>.</p>
+or investment advice. See also the in-depth <a href="https://opendoor.thisisfed.xyz/">Opendoor Scorecard</a>.</p>
 </footer>
 <p class="credit"><span>An idea by Federico R. T. Ferrari (<a href="https://thisisfed.xyz" target="_blank" rel="noopener">thisisfed.xyz</a>)</span></p>
 </div>
@@ -313,7 +313,7 @@ or investment advice. See also the in-depth <a href="https://thisisfed.github.io
     ];
     var h = "";
     if (r.ticker === "OPEN") h += '<div class="card"><div class="banner"><span>There’s an in-depth Opendoor scorecard, with Opendoor’s own tracker, debt split and dilution line by line.</span>' +
-      '<a class="btn" href="https://thisisfed.github.io/opendoor-scorecard/">Open it</a></div></div>';
+      '<a class="btn" href="https://opendoor.thisisfed.xyz/">Open it</a></div></div>';
     h += '<div class="company"><div><h2>' + esc(r.name) + '</h2><div class="meta"><span><b>' + esc(r.ticker) + "</b> on " + esc(r.exchange || "US markets") + "</span><span>" +
       esc(r.sector.label) + "</span><span>Filings to " + esc(date(f.period_end)) + "</span></div></div>" +
       '<div class="actions"><button class="btn" type="button" id="share">Copy link</button><a class="btn" href="' + esc(r.links.filings) + '" target="_blank" rel="noopener">SEC filings</a></div></div>';
