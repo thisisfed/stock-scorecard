@@ -13,7 +13,7 @@ globalThis.fetch = async (u, o) => {
   }
   return real(u, o);
 };
-const { default: handler } = await import("../api/og.js");
+const { GET: handler } = await import("../api/og.js");
 const [t, vs] = process.argv.slice(2);
 const res = await handler(new Request(`https://stock-scorecard-eosin.vercel.app/api/og?t=${t || ""}${vs ? "&vs=" + vs : ""}`));
 const name = `out/og-${t || "home"}${vs ? "-" + vs : ""}.png`;
