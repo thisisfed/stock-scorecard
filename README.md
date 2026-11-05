@@ -1,7 +1,7 @@
 # Stock Scorecard
 
 Type a ticker, get an independent 0–10 score for the company, built on the spot from its SEC filings and its
-share price. Free to run: a static page plus two small Python functions on Vercel's free Hobby plan.
+share price. Free to run: a static page plus a few small functions on Vercel's free Hobby plan.
 
 Not investment advice: a structured summary of public numbers, not a forecast or a recommendation.
 
@@ -16,6 +16,21 @@ When someone asks for a ticker, `api/score.py`:
    or switch the labels they use, and scores six pillars against norms for the company's industry.
 
 Results are cached for an hour at Vercel's edge, so repeat visits are instant and the SEC sees few requests.
+
+The page shows the score as a ring with a letter grade and a one-line summary, pillar bars with their weights and a
+radar, a 0–10 bar on every measure (hover or tap for its 0- and 10-point values), a 1Y / 6M / 3M price chart,
+quarterly results with year-on-year arrows and sparklines, and the method with every threshold by industry.
+
+| Address | What it does |
+|---|---|
+| `/AAPL` | the scorecard for one company (`api/page.py` adds the link-preview tags, then the page loads the score) |
+| `/AAPL/vs/MSFT` | two companies side by side; typing `AAPL vs MSFT` in the search box goes there too |
+| `/api/score?t=AAPL` | the score as JSON |
+| `/api/og?t=AAPL` (`&vs=MSFT`) | the 1200×630 share image for chat apps and social sites (`api/og.js`, Vercel's free Edge runtime) |
+| `/api/rules` | pillars, weights, grades and every threshold by industry, for the method block |
+| `/api/tickers` | the list behind the search suggestions |
+
+"Your recent scores" on the home page is kept in the visitor's own browser; nothing is stored on the server.
 
 | Pillar | Weight | Measures |
 |---|---|---|
@@ -46,7 +61,11 @@ as a repository secret (**Settings → Secrets and variables → Actions**) for 
 ```
 SEC_UA="Jane Smith jane@example.com" python3 api/_engine.py AAPL NVDA KO
 python3 tests/test_engine.py           # checks with a made-up company, no network
-python3 tools/dev_server.py            # preview the page with saved results from out/
+python3 tests/test_page.py             # link-preview tags and the method data
+python3 tools/fixtures.py              # made-up companies in out/ (DEMO, SHOP2, BANKX) to preview offline
+python3 tools/dev_server.py            # preview at http://127.0.0.1:8765/DEMO or /DEMO/vs/SHOP2
+npm install && node tools/og_preview.mjs DEMO SHOP2   # render a share image to out/
 ```
 
-Standard library only; no packages to install.
+The Python is standard library only. The share image needs one npm package (`@vercel/og`), which Vercel installs
+on its own; the Inter font files it uses are in `api/_og/` (SIL Open Font License).

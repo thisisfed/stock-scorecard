@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 SEC_UA = os.environ.get("SEC_UA") or "Stock Scorecard research contact@example.com"
 BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
-VERSION = "1"
+VERSION = "2"
 
 
 class ScoreError(Exception):
@@ -520,6 +520,14 @@ PILLAR_WORDS = {  # (strength, weakness)
     "Valuation": ("the price looks reasonable", "the shares look expensive"),
     "Momentum": ("the share price is trending up", "the share price is in a downtrend"),
 }
+PILLAR_SHORT = {  # (strength, weakness) as short noun phrases for the one-line summary
+    "Growth": ("strong growth", "shrinking sales"),
+    "Profitability": ("solid profitability", "thin profits"),
+    "Balance sheet": ("a strong balance sheet", "a stretched balance sheet"),
+    "Dilution": ("little dilution", "heavy dilution"),
+    "Valuation": ("a fair price", "a rich valuation"),
+    "Momentum": ("strong momentum", "a falling share price"),
+}
 GRADES = [(8.0, "A", "Strong: the numbers back the price."),
           (6.5, "B", "Good: solid numbers with manageable risks."),
           (5.0, "C", "Mixed: strengths and weaknesses roughly balance."),
@@ -541,6 +549,25 @@ def rule(key, sector):
     label, bad, good, f = RULES[key]
     bad, good = SECTOR_RULES.get(sector, {}).get(key, (bad, good))
     return label, bad, good, f
+
+
+def methodology():
+    """Pillars, weights, grades and every measure's 0- and 10-point values by industry, for the page's method block."""
+    sectors = [("other", "Other")] + [(k, l) for k, l, _ in SECTORS if k != "blank_check"]
+    seen, uniq = set(), []
+    for k, l in sectors:
+        if k not in seen:
+            seen.add(k)
+            uniq.append({"key": k, "label": l})
+    return {
+        "version": VERSION,
+        "measures": {k: {"label": v[0], "fmt": v[3]} for k, v in RULES.items()},
+        "thresholds": {s["key"]: {k: rule(k, s["key"])[1:3] for k in RULES} for s in uniq},
+        "sectors": uniq,
+        "models": {m: [{"name": n, "weight": w, "measures": ks, "question": q} for n, w, ks, q in ps]
+                   for m, ps in PILLARS.items()},
+        "grades": [{"min": t, "grade": g, "verdict": v} for t, g, v in GRADES],
+    }
 
 
 # ---------------------------------------------------------------- the score
@@ -832,6 +859,10 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings, fx=None):
     reason = f"{join(good)}, but {join(bad)}." if good and bad else (join(good or bad) + "." if good or bad else
                                                                     "No pillar stands out either way.")
     reason = reason[0].upper() + reason[1:]
+    sg, sb = [PILLAR_SHORT[p["name"]][0] for p in ups], [PILLAR_SHORT[p["name"]][1] for p in downs]
+    summary = (f"{join(sg)}, but {join(sb)}" if sg and sb else join(sg or sb) if sg or sb else
+               "Middle of the road on every pillar")
+    summary = summary[0].upper() + summary[1:]
     missing = [p["name"] for p in pillars if p["score"] is None]
     if missing:
         warnings.append("Not scored (no data): " + ", ".join(missing) + ". The overall score uses the other pillars.")
@@ -850,7 +881,8 @@ def build(ticker, cik, name, exchange, sub, cf, px, warnings, fx=None):
         "ticker": ticker, "name": name, "cik": cik, "exchange": exchange, "version": VERSION,
         "sector": {"key": sector, "label": sector_label, "sic": sic, "sic_label": sub.get("sicDescription")},
         "model": model, "currency": cur,
-        "score": {"overall": overall, "grade": grade, "verdict": verdict, "reason": reason, "pillars": pillars,
+        "score": {"overall": overall, "grade": grade, "verdict": verdict, "reason": reason, "summary": summary,
+                  "pillars": pillars,
                   "weights_used": wsum},
         "price": {k: v for k, v in (px or {}).items() if k != "history"} or None,
         "history": (px or {}).get("history"),
